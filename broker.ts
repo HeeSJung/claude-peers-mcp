@@ -90,9 +90,20 @@ db.run(`
     last_event_at  TEXT,
     last_health_at TEXT,
     consecutive_health_failures INTEGER NOT NULL DEFAULT 0,
-    status         TEXT NOT NULL DEFAULT 'unknown'
+    status         TEXT NOT NULL DEFAULT 'unknown',
+    stale_since    TEXT
   )
 `);
+
+// Migration for DBs created before stale_since was added (pre-2026-04-30 fix).
+// last_health_at updates on every probe attempt — including failures — so the
+// janitor used to never see >5min staleness. stale_since captures the live→stale
+// transition timestamp instead, decoupled from probe activity.
+try {
+  db.run("ALTER TABLE peer_brokers ADD COLUMN stale_since TEXT");
+} catch {
+  // Column already exists — no-op.
+}
 
 db.run(`
   CREATE TABLE IF NOT EXISTS remote_peers (
@@ -170,8 +181,11 @@ const upsertPeerBroker = db.prepare(`
 `);
 const selectAllPeerBrokers = db.prepare(`SELECT * FROM peer_brokers`);
 const setBrokerStatus = db.prepare(`
-  UPDATE peer_brokers SET status = ?, last_health_at = ?, consecutive_health_failures = ?
+  UPDATE peer_brokers SET status = ?, last_health_at = ?, consecutive_health_failures = ?, stale_since = ?
   WHERE machine = ?
+`);
+const setBrokerDown = db.prepare(`
+  UPDATE peer_brokers SET status = 'down' WHERE machine = ?
 `);
 const setBrokerEventTs = db.prepare(`
   UPDATE peer_brokers SET last_event_at = ? WHERE machine = ?
@@ -652,19 +666,35 @@ function applyPeerEvent(ev: PeerEventRequest): void {
 async function probeOnePeer(machine: string): Promise<void> {
   const result = await peerPostJson<PeerBrokerHealthResponse>(machine, "GET", "/health", null);
   const now = new Date().toISOString();
-  const row = db.query("SELECT consecutive_health_failures, status FROM peer_brokers WHERE machine = ?").get(machine) as
-    | { consecutive_health_failures: number; status: string }
+  const row = db.query(
+    "SELECT consecutive_health_failures, status, stale_since FROM peer_brokers WHERE machine = ?",
+  ).get(machine) as
+    | { consecutive_health_failures: number; status: string; stale_since: string | null }
     | undefined;
   const fails = row?.consecutive_health_failures ?? 0;
+  const prevStatus = row?.status ?? "unknown";
+
   if (result.ok) {
-    setBrokerStatus.run("live", now, 0, machine);
+    // live: clear stale_since so the janitor doesn't keep counting from an
+    // earlier outage if the peer flapped.
+    setBrokerStatus.run("live", now, 0, null, machine);
     void logCrossHost(`HEALTH-OUT ${machine} OK`);
-  } else {
-    const newFails = fails + 1;
-    const newStatus = newFails >= STALE_AFTER_FAILS ? "stale" : (row?.status ?? "unknown");
-    setBrokerStatus.run(newStatus, now, newFails, machine);
-    void logCrossHost(`HEALTH-OUT ${machine} ERR ${result.error ?? "?"} (${newFails}/${STALE_AFTER_FAILS})`);
+    return;
   }
+
+  const newFails = fails + 1;
+  const newStatus = newFails >= STALE_AFTER_FAILS ? "stale" : prevStatus;
+  // Capture stale_since on the live→stale transition only. Preserve the
+  // existing stamp on stale→stale so the janitor measures elapsed-stale,
+  // not elapsed-since-last-probe (the bug Silas caught 2026-04-30).
+  let newStaleSince = row?.stale_since ?? null;
+  if (newStatus === "stale" && (prevStatus !== "stale" || newStaleSince === null)) {
+    newStaleSince = now;
+  }
+  setBrokerStatus.run(newStatus, now, newFails, newStaleSince, machine);
+  void logCrossHost(
+    `HEALTH-OUT ${machine} ERR ${result.error ?? "?"} (${newFails}/${STALE_AFTER_FAILS})`,
+  );
 }
 
 async function healthLoop(): Promise<void> {
@@ -678,16 +708,16 @@ function janitor(): void {
   const brokers = selectAllPeerBrokers.all() as Array<{
     machine: string;
     status: string;
-    last_health_at: string | null;
+    stale_since: string | null;
   }>;
   for (const b of brokers) {
     if (b.machine === SELF_MACHINE) continue;
-    if (b.status === "stale" && b.last_health_at) {
-      const lastMs = Date.parse(b.last_health_at);
-      if (Number.isFinite(lastMs) && now - lastMs > DOWN_AFTER_MS) {
-        setBrokerStatus.run("down", b.last_health_at, STALE_AFTER_FAILS, b.machine);
+    if (b.status === "stale" && b.stale_since) {
+      const staleMs = Date.parse(b.stale_since);
+      if (Number.isFinite(staleMs) && now - staleMs > DOWN_AFTER_MS) {
+        setBrokerDown.run(b.machine);
         deleteRemotePeersByMachine.run(b.machine);
-        void logCrossHost(`PRUNE ${b.machine} remote_peers (down >5min)`);
+        void logCrossHost(`PRUNE ${b.machine} remote_peers (stale >5min)`);
       }
     }
   }

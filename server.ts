@@ -155,9 +155,9 @@ IMPORTANT: When you receive a <channel source="claude-peers" ...> message, RESPO
 Read the from_id, from_summary, and from_cwd attributes to understand who sent the message. Reply by calling send_message with their from_id.
 
 Available tools:
-- list_peers: Discover other Claude Code instances (scope: machine/directory/repo)
-- send_message: Send a message to another instance by ID
-- set_summary: Set a 1-2 sentence summary of what you're working on (visible to other peers)
+- list_peers: Discover other Claude Code instances (scope: machine/directory/repo/machine+remote). "machine+remote" includes peers on other claude-peers brokers reached over Tailscale; their IDs are suffixed @<machine>.
+- send_message: Send a message to another instance by ID. Use the bare ID for local peers (e.g. "ec39idnw") or the @<machine> form for remote peers (e.g. "7sk2ab12@milo-mac"). Cross-host messages are forwarded HTTPS over Tailscale; recipient sees the same channel push as a local peer.
+- set_summary: Set a 1-2 sentence summary of what you're working on (visible to other peers, including remote ones)
 - check_messages: Manually check for new messages
 
 When you start, proactively call set_summary to describe what you're working on. This helps other instances understand your context.`,
@@ -176,9 +176,9 @@ const TOOLS = [
       properties: {
         scope: {
           type: "string" as const,
-          enum: ["machine", "directory", "repo"],
+          enum: ["machine", "directory", "repo", "machine+remote"],
           description:
-            'Scope of peer discovery. "machine" = all instances on this computer. "directory" = same working directory. "repo" = same git repository (including worktrees or subdirectories).',
+            'Scope of peer discovery. "machine" = all instances on this computer. "directory" = same working directory. "repo" = same git repository (including worktrees or subdirectories). "machine+remote" = local + cross-host peers from other claude-peers brokers (remote IDs are suffixed @<machine>).',
         },
       },
       required: ["scope"],
@@ -193,7 +193,8 @@ const TOOLS = [
       properties: {
         to_id: {
           type: "string" as const,
-          description: "The peer ID of the target Claude Code instance (from list_peers)",
+          description:
+            'The peer ID of the target Claude Code instance (from list_peers). Local peers use the bare ID (e.g. "ec39idnw"). Remote peers use the "<id>@<machine>" form (e.g. "7sk2ab12@milo-mac") — those messages are forwarded over Tailscale to the destination broker.',
         },
         message: {
           type: "string" as const,
@@ -240,7 +241,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
   switch (name) {
     case "list_peers": {
-      const scope = (args as { scope: string }).scope as "machine" | "directory" | "repo";
+      const scope = (args as { scope: string }).scope as
+        | "machine"
+        | "directory"
+        | "repo"
+        | "machine+remote";
       try {
         const peers = await brokerFetch<Peer[]>("/list-peers", {
           scope,

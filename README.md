@@ -107,14 +107,92 @@ bun cli.ts kill-broker       # stop the broker
 
 ## Configuration
 
-| Environment variable | Default              | Description                           |
-| -------------------- | -------------------- | ------------------------------------- |
-| `CLAUDE_PEERS_PORT`  | `7899`               | Broker port                           |
-| `CLAUDE_PEERS_DB`    | `~/.claude-peers.db` | SQLite database path                  |
-| `OPENAI_API_KEY`     | —                    | Enables auto-summary via gpt-5.4-nano |
+| Environment variable                    | Default                  | Description                                                          |
+| --------------------------------------- | ------------------------ | -------------------------------------------------------------------- |
+| `CLAUDE_PEERS_PORT`                     | `7899`                   | Broker local-listener port (loopback, unauth)                        |
+| `CLAUDE_PEERS_PEER_PORT`                | `7900`                   | Broker cross-host listener port (Tailscale-bound, HMAC-required)      |
+| `CLAUDE_PEERS_DB`                       | `~/.claude-peers.db`     | SQLite database path                                                  |
+| `CLAUDE_PEERS_CONFIG_DIR`               | `~/.claude-peers/`       | Where `brokers.json` and `secret-current` live                        |
+| `CLAUDE_PEERS_CROSS_HOST_LOG`           | `<config-dir>/cross-host.log` | Audit log for cross-broker requests                              |
+| `OPENAI_API_KEY`                        | —                        | Enables auto-summary via gpt-5.4-nano                                 |
 
 ## Requirements
 
 - [Bun](https://bun.sh)
 - Claude Code v2.1.80+
 - claude.ai login (channels require it — API key auth won't work)
+- (cross-host only) [Tailscale](https://tailscale.com) on both machines
+
+## Cross-host messaging (v2)
+
+Two machines on the same Tailnet can join their broker meshes — Claude sessions
+on machine A can `send_message` to peers on machine B. The cross-host listener
+is HMAC-signed (SHA-256, 30s clock window, nonce LRU replay protection) and
+binds to the Tailscale IP only — never to `0.0.0.0` or any public NIC.
+
+### One-time setup per machine
+
+1. **Generate a broker secret:**
+
+   ```bash
+   mkdir -p ~/.claude-peers
+   openssl rand -hex 32 > ~/.claude-peers/secret-current
+   chmod 600 ~/.claude-peers/secret-current
+   ```
+
+2. **Add a forced-command SSH key path** to `~/.ssh/authorized_keys`:
+
+   ```
+   command="cat ~/.claude-peers/secret-current",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty <peer's pubkey>
+   ```
+
+3. **Add an SSH alias on the *other* machine** in `~/.ssh/config`:
+
+   ```
+   Host <this-machine>-broker-secret
+       HostName <this-machine>.tailnet
+       User <peer-user>
+       IdentityFile ~/.ssh/broker-secret-fetcher
+       IdentitiesOnly yes
+   ```
+
+4. **Edit `~/.claude-peers/brokers.json`:**
+
+   ```json
+   {
+     "schema": 1,
+     "self_machine": "silas-vps",
+     "self_ts_addr": "100.64.0.5:7900",
+     "peers": [
+       {
+         "machine":   "milo-mac",
+         "ts_addr":   "100.64.0.7:7900",
+         "ssh_alias": "milo-broker-secret"
+       }
+     ]
+   }
+   ```
+
+5. **Restart the broker** — it now binds two listeners:
+
+   ```
+   [claude-peers broker] local listener: 127.0.0.1:7899
+   [claude-peers broker] peer listener:  100.64.0.5:7900
+   [claude-peers broker] peers: milo-mac
+   ```
+
+### Use it from Claude
+
+```
+list_peers with scope "machine+remote"
+   → returns local + remote peers; remote IDs end in @<machine>
+
+send_message to_id "<id>@milo-mac" message "..."
+   → forwarded over Tailscale; recipient sees same channel push as local
+```
+
+If `brokers.json` is absent, the broker runs in single-broker mode (v1
+behavior — local loopback only). Cross-host is opt-in.
+
+For the full design + smoke-test plan, see
+[`Claude-Claw/knowledge/multi-session-peer-bridge-v2-broker.md`](https://github.com/HeeSJung/Claude-Claw/blob/main/knowledge/multi-session-peer-bridge-v2-broker.md).

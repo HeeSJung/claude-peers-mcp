@@ -1,0 +1,18 @@
+[Unit]
+Description=claude-peers broker — peer discovery + messaging for Claude Code instances
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/claude-peers-mcp
+ExecStart=%h/.bun/bin/bun broker.ts
+Restart=on-failure
+RestartSec=3
+StandardOutput=append:%h/claude-peers-mcp/broker.log
+StandardError=append:%h/claude-peers-mcp/broker.log
+MemoryHigh=128M
+MemoryMax=256M
+
+[Install]
+WantedBy=default.target

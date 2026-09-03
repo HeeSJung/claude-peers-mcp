@@ -1,0 +1,26 @@
+# Install by SYMLINK, not copy — `ln -s $PWD/systemd/crew-peers-broker.service
+# ~/.config/systemd/user/` — so an edit here is live after a daemon-reload.
+# Renamed from claude-peers-broker.service 2026-09-04 (sooth-os/sooth#861) when
+# the repo moved to ~/apps/crew-peers. The MCP key, tool prefix and channel tag
+# are still `claude-peers` — those rename separately in #862.
+[Unit]
+Description=crew-peers broker — peer discovery + messaging for Sooth crewmate sessions
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/apps/crew-peers
+ExecStart=%h/.bun/bin/bun broker.ts
+Restart=on-failure
+RestartSec=3
+# Log lives in the state dir (%h/.claude-peers/, alongside brokers.json and
+# cross-host.log) rather than in the repo folder, so runtime output can never
+# show up as untracked noise in `git status`.
+StandardOutput=append:%h/.claude-peers/broker.log
+StandardError=append:%h/.claude-peers/broker.log
+MemoryHigh=128M
+MemoryMax=256M
+
+[Install]
+WantedBy=default.target

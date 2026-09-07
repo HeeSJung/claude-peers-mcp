@@ -1,16 +1,16 @@
 #!/usr/bin/env bun
 /**
- * claude-peers MCP server
+ * crew-peers MCP server
  *
  * Spawned by Claude Code as a stdio MCP server (one per instance).
  * Connects to the shared broker daemon for peer discovery and messaging.
  * Declares claude/channel capability to push inbound messages immediately.
  *
  * Usage:
- *   claude --dangerously-load-development-channels server:claude-peers
+ *   claude --dangerously-load-development-channels server:crew-peers
  *
  * With .mcp.json:
- *   { "claude-peers": { "command": "bun", "args": ["./server.ts"] } }
+ *   { "crew-peers": { "command": "bun", "args": ["./server.ts"] } }
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -95,7 +95,7 @@ async function ensureBroker(): Promise<void> {
 
 function log(msg: string) {
   // MCP stdio servers must only use stderr for logging (stdout is the MCP protocol)
-  console.error(`[claude-peers] ${msg}`);
+  console.error(`[crew-peers] ${msg}`);
 }
 
 async function getGitRoot(cwd: string): Promise<string | null> {
@@ -142,20 +142,20 @@ let myGitRoot: string | null = null;
 // --- MCP Server ---
 
 const mcp = new Server(
-  { name: "claude-peers", version: "0.1.0" },
+  { name: "crew-peers", version: "0.1.0" },
   {
     capabilities: {
       experimental: { "claude/channel": {} },
       tools: {},
     },
-    instructions: `You are connected to the claude-peers network. Other Claude Code instances on this machine can see you and send you messages.
+    instructions: `You are connected to the crew-peers network. Other Claude Code instances on this machine can see you and send you messages.
 
-IMPORTANT: When you receive a <channel source="claude-peers" ...> message, RESPOND IMMEDIATELY. Do not wait until your current task is finished. Pause what you are doing, reply to the message using send_message, then resume your work. Treat incoming peer messages like a coworker tapping you on the shoulder — answer right away, even if you're in the middle of something.
+IMPORTANT: When you receive a <channel source="crew-peers" ...> message, RESPOND IMMEDIATELY. Do not wait until your current task is finished. Pause what you are doing, reply to the message using send_message, then resume your work. Treat incoming peer messages like a coworker tapping you on the shoulder — answer right away, even if you're in the middle of something.
 
 Read the from_id, from_summary, and from_cwd attributes to understand who sent the message. Reply by calling send_message with their from_id.
 
 Available tools:
-- list_peers: Discover other Claude Code instances (scope: machine/directory/repo/machine+remote). "machine+remote" includes peers on other claude-peers brokers reached over Tailscale; their IDs are suffixed @<machine>.
+- list_peers: Discover other Claude Code instances (scope: machine/directory/repo/machine+remote). "machine+remote" includes peers on other crew-peers brokers reached over Tailscale; their IDs are suffixed @<machine>.
 - send_message: Send a message to another instance by ID. Use the bare ID for local peers (e.g. "ec39idnw") or the @<machine> form for remote peers (e.g. "7sk2ab12@milo-mac"). Cross-host messages are forwarded HTTPS over Tailscale; recipient sees the same channel push as a local peer.
 - set_summary: Set a 1-2 sentence summary of what you're working on (visible to other peers, including remote ones)
 - check_messages: Manually check for new messages
@@ -178,7 +178,7 @@ const TOOLS = [
           type: "string" as const,
           enum: ["machine", "directory", "repo", "machine+remote"],
           description:
-            'Scope of peer discovery. "machine" = all instances on this computer. "directory" = same working directory. "repo" = same git repository (including worktrees or subdirectories). "machine+remote" = local + cross-host peers from other claude-peers brokers (remote IDs are suffixed @<machine>).',
+            'Scope of peer discovery. "machine" = all instances on this computer. "directory" = same working directory. "repo" = same git repository (including worktrees or subdirectories). "machine+remote" = local + cross-host peers from other crew-peers brokers (remote IDs are suffixed @<machine>).',
         },
       },
       required: ["scope"],

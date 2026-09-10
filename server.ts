@@ -31,6 +31,13 @@ import {
   getGitBranch,
   getRecentFiles,
 } from "./shared/summarize.ts";
+import {
+  deliverToCodexSeat,
+  seatForCwd,
+  seatRuntime,
+  type PeerMessageView,
+  type Seat,
+} from "./codex-seat.ts";
 
 // --- Configuration ---
 
@@ -404,6 +411,48 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
   }
 });
 
+// --- Per-runtime delivery (sooth-os/sooth#911) ---
+
+/**
+ * Deliver `text` the codex way when THIS process's seat is on codex, and say
+ * whether it did.
+ *
+ * `false` means "not my business" — the seat is on Claude Code (or the corpus
+ * resolver could not be asked, or this cwd is not a crewmate home at all), and
+ * the caller runs the unchanged channel push below. That is the safe direction
+ * on every failure: guessing codex for a Claude seat would paste into its pane a
+ * message its own channel was about to deliver.
+ *
+ * Never throws. A message that reached neither the socket nor the pane is logged
+ * loudly and dropped — the broker has already marked it delivered, and there is
+ * no retry timer to hand it back to.
+ */
+async function deliverIfCodexSeat(msg: PeerMessageView): Promise<boolean> {
+  let seat: Seat | undefined;
+  try {
+    seat = seatForCwd(myCwd);
+    if (!seat) return false;
+    if (seatRuntime(seat.id) !== "codex") return false;
+  } catch (e) {
+    log(`Runtime probe failed (${myCwd}) — using the channel push: ${e}`);
+    return false;
+  }
+
+  try {
+    const outcome = await deliverToCodexSeat(seat, msg);
+    if (outcome.path === "ws") {
+      log(`codex turn/start → ${seat.id} (thread ${outcome.threadId}): ${msg.text.slice(0, 80)}`);
+    } else {
+      // A FALLBACK, never logged as a success: the reason is the line a human
+      // reads to find out why the seat is not on its own socket.
+      log(`codex WS unavailable for ${seat.id} — FALLBACK to tmux paste: ${outcome.reason}`);
+    }
+  } catch (e) {
+    log(`codex delivery FAILED for ${seat.id} (both WS and pane): ${e instanceof Error ? e.message : String(e)}`);
+  }
+  return true;
+}
+
 // --- Polling loop for inbound messages ---
 
 async function pollAndPushMessages() {
@@ -430,6 +479,22 @@ async function pollAndPushMessages() {
       } catch {
         // Non-critical, proceed without sender info
       }
+
+      // WHICH WAY this seat is reached, asked fresh for every message
+      // (sooth-os/sooth#911, ADR-0035 D5). A `claude/channel` push is
+      // Claude-Code-proprietary: a codex seat runs this same MCP server and can
+      // call its tools, but has no surface for that notification, so the push
+      // would reach nobody while the broker marked the message delivered —
+      // silence, with nothing in any log. Never cached, because this process
+      // outlives a `switch-ai` and a held answer is a seat that goes deaf.
+      const view: PeerMessageView = {
+        from_id: msg.from_id,
+        from_summary: fromSummary,
+        from_cwd: fromCwd,
+        sent_at: msg.sent_at,
+        text: msg.text,
+      };
+      if (await deliverIfCodexSeat(view)) continue;
 
       // Push as channel notification — this is what makes it immediate
       await mcp.notification({

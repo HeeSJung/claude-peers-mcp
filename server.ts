@@ -309,30 +309,20 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
     case "send_message": {
       const { to_id, message } = args as { to_id: string; message: string };
-      const vscodeQid = parseVscodeReplyAddress(to_id);
-      if (vscodeQid) {
-        try {
+      try {
+        // A VS Code question's from_id is answered on this box, never through the
+        // broker, so it needs no registration.
+        const vscodeQid = parseVscodeReplyAddress(to_id);
+        if (vscodeQid) {
           const r = await deliverVscodeReply(vscodeQid, message);
           return { content: [{ type: "text" as const, text: r.text }], isError: !r.ok };
-        } catch (e) {
+        }
+        if (!myId) {
           return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Error sending message: ${e instanceof Error ? e.message : String(e)}`,
-              },
-            ],
+            content: [{ type: "text" as const, text: "Not registered with broker yet" }],
             isError: true,
           };
         }
-      }
-      if (!myId) {
-        return {
-          content: [{ type: "text" as const, text: "Not registered with broker yet" }],
-          isError: true,
-        };
-      }
-      try {
         const result = await brokerFetch<{ ok: boolean; error?: string }>("/send-message", {
           from_id: myId,
           to_id,

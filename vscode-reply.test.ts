@@ -28,7 +28,7 @@ describe("deliverVscodeReply", () => {
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), "vscode-reply-test-"));
     script = join(dir, "fake-reply.sh");
-    // Captures argv + stdin, then behaves per FAKE_EXIT (set via the message's first line).
+    // Captures argv + stdin, then exits per the message's first line (exit0/exit2/exit3).
     writeFileSync(
       script,
       `#!/usr/bin/env bash

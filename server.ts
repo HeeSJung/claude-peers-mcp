@@ -38,6 +38,7 @@ import {
   type PeerMessageView,
   type Seat,
 } from "./codex-seat.ts";
+import { parseVscodeReplyAddress, deliverVscodeReply } from "./vscode-reply.ts";
 
 // --- Configuration ---
 
@@ -194,7 +195,7 @@ const TOOLS = [
   {
     name: "send_message",
     description:
-      "Send a message to another Claude Code instance by peer ID. The message will be pushed into their session immediately via channel notification.",
+      "Send a message to another Claude Code instance by peer ID. The message will be pushed into their session immediately via channel notification. A from_id of the form vscode@mac:<qid> is a VS Code question; send_message to it puts the reply into that question's chat.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -308,6 +309,23 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 
     case "send_message": {
       const { to_id, message } = args as { to_id: string; message: string };
+      const vscodeQid = parseVscodeReplyAddress(to_id);
+      if (vscodeQid) {
+        try {
+          const r = await deliverVscodeReply(vscodeQid, message);
+          return { content: [{ type: "text" as const, text: r.text }], isError: !r.ok };
+        } catch (e) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Error sending message: ${e instanceof Error ? e.message : String(e)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
       if (!myId) {
         return {
           content: [{ type: "text" as const, text: "Not registered with broker yet" }],

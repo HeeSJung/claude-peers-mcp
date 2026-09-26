@@ -41,6 +41,7 @@ import {
 } from "./hmac.ts";
 import { SshSecretFetcher } from "./secret-fetcher.ts";
 import { logCrossHost, checkRate } from "./cross-host-log.ts";
+import { parseVscodeReplyAddress, deliverVscodeReply } from "./vscode-reply.ts";
 
 const PORT_LOCAL = parseInt(process.env.CLAUDE_PEERS_PORT ?? "7899", 10);
 const PORT_PEER = parseInt(process.env.CLAUDE_PEERS_PEER_PORT ?? "7900", 10);
@@ -388,6 +389,16 @@ function handleListPeers(body: ListPeersRequest): Peer[] {
 async function handleSendMessage(
   body: SendMessageRequest,
 ): Promise<{ ok: boolean; error?: string }> {
+  // `vscode@mac:<qid>` is a VS Code question's reply address, not a peer on a
+  // machine called `mac:q…`. The broker owns this route so every HTTP client
+  // (haru's bridge, a codex seat, curl) gets it, not only MCP sessions whose
+  // server.ts intercepts it. The mailbox script's stderr is the error text.
+  const qid = parseVscodeReplyAddress(body.to_id);
+  if (qid) {
+    const r = await deliverVscodeReply(qid, body.text);
+    return r.ok ? { ok: true } : { ok: false, error: r.text };
+  }
+
   // Detect @machine suffix → forward.
   const at = body.to_id.lastIndexOf("@");
   if (at > 0) {

@@ -15,7 +15,7 @@ Peer discovery and messaging MCP channel for Claude Code instances.
 - `shared/types.ts` — Shared TypeScript types for broker API.
 - `shared/summarize.ts` — Auto-summary generation via gpt-5.4-nano.
 - `cli.ts` — CLI utility for inspecting broker state.
-- `vscode-reply.ts` — Routes `send_message` to `vscode@mac:<qid>` into the VS Code mailbox via `crew-reply-vscode.sh` instead of the broker.
+- `vscode-reply.ts` — Routes `send_message` to `vscode@mac:<qid>` into the VS Code mailbox via `crew-reply-vscode.sh`. The broker's `/send-message` calls it for every HTTP client; `server.ts` still calls it too.
 
 ## Running
 

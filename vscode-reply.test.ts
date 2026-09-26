@@ -8,12 +8,19 @@ describe("parseVscodeReplyAddress", () => {
   test("accepts vscode@mac:<qid> and returns the qid", () => {
     expect(parseVscodeReplyAddress("vscode@mac:q1758600000-12345-678")).toBe("q1758600000-12345-678");
   });
+  test("accepts a live-shaped qid from crew-ask-peers.sh", () => {
+    expect(parseVscodeReplyAddress("vscode@mac:q1790407825-2025251-182616983")).toBe(
+      "q1790407825-2025251-182616983",
+    );
+  });
   test.each([
     "vscode@mac",
     "vscode@mac:",
+    "vscode@mac:notaqid",
     "vscode@mac:../x",
     "abc123",
     "abc123@mac",
+    "k3pogncc@mac",
     "vscode@mac:q1-2-3/../etc",
   ])("returns null for %p", (addr) => {
     expect(parseVscodeReplyAddress(addr)).toBeNull();

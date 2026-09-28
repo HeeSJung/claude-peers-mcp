@@ -135,6 +135,10 @@ type PeerRow = Omit<Peer, "headless"> & { headless: number };
 function toPeer(row: PeerRow): Peer {
   return { ...row, headless: row.headless === 1 };
 }
+// Absent on the wire (old clients, older brokers) = false.
+function toHeadlessColumn(flag: boolean | undefined): number {
+  return flag === true ? 1 : 0;
+}
 
 // --- Stale-peer cleanup (existing behavior) ---
 
@@ -290,15 +294,8 @@ async function ensurePeerSecret(machine: string): Promise<Buffer | null> {
 function snapshotLocalPeer(id: string): PeerEventRequest["peer"] | null {
   const row = selectPeerById.get(id) as PeerRow | undefined;
   if (!row) return null;
-  return {
-    id: row.id,
-    cwd: row.cwd,
-    git_root: row.git_root,
-    summary: row.summary,
-    registered_at: row.registered_at,
-    last_seen: row.last_seen,
-    headless: row.headless === 1,
-  };
+  const { id: peerId, cwd, git_root, summary, registered_at, last_seen, headless } = toPeer(row);
+  return { id: peerId, cwd, git_root, summary, registered_at, last_seen, headless };
 }
 
 function handleRegister(body: RegisterRequest): RegisterResponse {
@@ -324,7 +321,7 @@ function handleRegister(body: RegisterRequest): RegisterResponse {
     body.summary,
     now,
     now,
-    body.headless === true ? 1 : 0,
+    toHeadlessColumn(body.headless),
   );
   const snap = snapshotLocalPeer(id);
   if (snap) {
@@ -357,20 +354,20 @@ function handleSetSummary(body: SetSummaryRequest): void {
 
 function handleListPeers(body: ListPeersRequest): Peer[] {
   let peers: Peer[];
-  const all = (rows: unknown[]) => (rows as PeerRow[]).map(toPeer);
+  const rowsToPeers = (rows: unknown[]) => (rows as PeerRow[]).map(toPeer);
   switch (body.scope) {
     case "machine":
-      peers = all(selectAllPeers.all());
+      peers = rowsToPeers(selectAllPeers.all());
       break;
     case "directory":
-      peers = all(selectPeersByDirectory.all(body.cwd));
+      peers = rowsToPeers(selectPeersByDirectory.all(body.cwd));
       break;
     case "repo":
-      if (body.git_root) peers = all(selectPeersByGitRoot.all(body.git_root));
-      else peers = all(selectPeersByDirectory.all(body.cwd));
+      if (body.git_root) peers = rowsToPeers(selectPeersByGitRoot.all(body.git_root));
+      else peers = rowsToPeers(selectPeersByDirectory.all(body.cwd));
       break;
     case "machine+remote": {
-      const local = all(selectAllPeers.all());
+      const local = rowsToPeers(selectAllPeers.all());
       const remote = selectAllRemotePeers.all() as Array<{
         machine: string;
         id: string;
@@ -396,7 +393,7 @@ function handleListPeers(body: ListPeersRequest): Peer[] {
       break;
     }
     default:
-      peers = all(selectAllPeers.all());
+      peers = rowsToPeers(selectAllPeers.all());
   }
 
   if (body.exclude_id) {
@@ -699,7 +696,7 @@ function applyPeerEvent(ev: PeerEventRequest): void {
     ev.peer.summary,
     ev.peer.registered_at,
     ev.peer.last_seen,
-    ev.peer.headless === true ? 1 : 0,
+    toHeadlessColumn(ev.peer.headless),
   );
 }
 

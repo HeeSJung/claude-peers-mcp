@@ -114,7 +114,7 @@ bun cli.ts kill-broker       # stop the broker
 | `CLAUDE_PEERS_DB`                       | `~/.claude-peers.db`     | SQLite database path                                                  |
 | `CLAUDE_PEERS_CONFIG_DIR`               | `~/.claude-peers/`       | Where `brokers.json` and `secret-current` live                        |
 | `CLAUDE_PEERS_CROSS_HOST_LOG`           | `<config-dir>/cross-host.log` | Audit log for cross-broker requests                              |
-| `CLAUDE_PEERS_HEADLESS`                | unset                    | `1`/`true`/`yes` registers this MCP server's peer as headless (a one-shot turn, not a resident seat); `/list-peers` rows carry `headless`, and seat-address resolvers skip them |
+| `CLAUDE_PEERS_HEADLESS`                | unset                    | `1`/`true`/`yes` registers this MCP server's peer as headless (a one-shot turn, not a resident seat); `/list-peers` rows (local and remote) carry `headless` so seat-address resolvers can skip them |
 | `OPENAI_API_KEY`                        | —                        | Enables auto-summary via gpt-5.4-nano                                 |
 
 ## Requirements

@@ -16,6 +16,7 @@ Peer discovery and messaging MCP channel for Claude Code instances.
 - `shared/summarize.ts` — Auto-summary generation via gpt-5.4-nano.
 - `cli.ts` — CLI utility for inspecting broker state.
 - `vscode-reply.ts` — Routes `send_message` to `vscode@mac:<qid>` into the VS Code mailbox via `crew-reply-vscode.sh`. Both the broker's `/send-message` (every HTTP client) and `server.ts` (a session before it registers) call it.
+- `ticket-address.ts` — Routes `send_message` to a ticket address (`ticket:<repo>#<n>`) into the solios-mcp daemon's inbox (`127.0.0.1:8770`, `x-solios-secret`), where it becomes a turn on that issue's ticket-session. The broker's `/send-message` matches it ahead of the peer lookup; the daemon's HTTP answer is the delivery verdict, relayed to the sender as `{ok:false, error}` on refusal.
 - `headless.ts` — The headless marker: `server.ts` reads `CLAUDE_PEERS_HEADLESS` at startup and sends `headless` on `/register`; the broker stores it, returns it on `/list-peers`, and carries it on `peer-events` fanout.
 
 ## Running

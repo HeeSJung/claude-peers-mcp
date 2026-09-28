@@ -196,7 +196,7 @@ const TOOLS = [
   {
     name: "send_message",
     description:
-      "Send a message to another Claude Code instance by peer ID. The message will be pushed into their session immediately via channel notification. A from_id of the form vscode@mac:<qid> is a VS Code question; send_message to it puts the reply into that question's chat.",
+      "Send a message to another Claude Code instance by peer ID. The message will be pushed into their session immediately via channel notification. A from_id of the form vscode@mac:<qid> is a VS Code question; send_message to it puts the reply into that question's chat. A to_id of the form ticket:<repo>#<issue> is an issue's ticket-session; the message becomes a new turn there, and a closed or never-mentioned issue returns an error.",
     inputSchema: {
       type: "object" as const,
       properties: {

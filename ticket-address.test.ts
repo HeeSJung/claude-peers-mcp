@@ -51,18 +51,18 @@ describe("loadDaemonSecret", () => {
     process.env.XDG_DATA_HOME = dir;
   });
 
-  test("env wins", () => {
+  test("env wins", async () => {
     process.env.SOOTH_KEEP_MCP_SECRET = "from-env";
-    expect(loadDaemonSecret()).toBe("from-env");
+    expect(await loadDaemonSecret()).toBe("from-env");
   });
-  test("falls back to <XDG_DATA_HOME>/solios-mcp/secret, trimmed", () => {
+  test("falls back to <XDG_DATA_HOME>/solios-mcp/secret, trimmed", async () => {
     mkdirSync(join(dir, "solios-mcp"), { recursive: true });
     writeFileSync(join(dir, "solios-mcp", "secret"), "abc123\n");
-    expect(loadDaemonSecret()).toBe("abc123");
+    expect(await loadDaemonSecret()).toBe("abc123");
   });
-  test("no env, no file → undefined", () => {
+  test("no env, no file → undefined", async () => {
     process.env.XDG_DATA_HOME = join(dir, "nowhere");
-    expect(loadDaemonSecret()).toBeUndefined();
+    expect(await loadDaemonSecret()).toBeUndefined();
   });
 });
 
@@ -102,7 +102,7 @@ describe("deliverTicketMessage — daemon faked at the HTTP seam", () => {
     });
     expect(r).toEqual({ ok: true });
     expect(seen).toHaveLength(1);
-    expect(seen[0]!.path.startsWith("/inbox/")).toBe(true);
+    expect(seen[0]!.path).toBe("/inbox/ticket");
     expect(seen[0]!.secret).toBe("s3cret");
     expect(seen[0]!.body).toEqual({
       source: "peer",
@@ -188,6 +188,7 @@ describe("broker /send-message — ticket branch ahead of the peer lookup", () =
         CLAUDE_PEERS_CONFIG_DIR: ROOT,
         CLAUDE_PEERS_DB: join(ROOT, "db.sqlite"),
         CLAUDE_PEERS_PORT: String(PORT),
+        CLAUDE_PEERS_PEER_PORT: String(PORT + 1),
         CLAUDE_PEERS_TICKET_INBOX_URL: `http://127.0.0.1:${daemon.port}`,
         SOOTH_KEEP_MCP_SECRET: "broker-test-secret",
       },

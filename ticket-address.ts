@@ -13,7 +13,6 @@
  * A message never creates a session; that rule is the daemon's.
  */
 
-import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -22,7 +21,7 @@ import { join } from "node:path";
 // — so it can never be a peer id ([a-z0-9]{8}) or the `<id>@<machine>` form.
 const TICKET_ADDRESS = /^ticket:[A-Za-z0-9._-]+#[1-9][0-9]*$/;
 
-/** The solios-mcp daemon's loopback listener. */
+/** The solios-mcp daemon's loopback listener; `CLAUDE_PEERS_TICKET_INBOX_URL` overrides it (tests). */
 const DEFAULT_INBOX_BASE_URL = "http://127.0.0.1:8770";
 
 /** Admission runs a live issue-state probe, so allow it a few seconds. */
@@ -39,11 +38,11 @@ export function parseTicketAddress(toId: string): string | null {
  * lookup order. Undefined when neither exists (the daemon then runs open).
  * Read per send so a rotated secret needs no broker restart.
  */
-export function loadDaemonSecret(): string | undefined {
+export async function loadDaemonSecret(): Promise<string | undefined> {
   if (process.env.SOOTH_KEEP_MCP_SECRET) return process.env.SOOTH_KEEP_MCP_SECRET;
   const dataHome = process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share");
   try {
-    return readFileSync(join(dataHome, "solios-mcp", "secret"), "utf8").trim() || undefined;
+    return (await Bun.file(join(dataHome, "solios-mcp", "secret")).text()).trim() || undefined;
   } catch {
     return undefined;
   }
@@ -53,10 +52,11 @@ export async function deliverTicketMessage(
   address: string,
   senderId: string,
   text: string,
+  // `secret: undefined` given explicitly = send no header; omitted = look it up.
   opts?: { baseUrl?: string; secret?: string | undefined },
 ): Promise<{ ok: boolean; error?: string }> {
   const baseUrl = opts?.baseUrl ?? process.env.CLAUDE_PEERS_TICKET_INBOX_URL ?? DEFAULT_INBOX_BASE_URL;
-  const secret = opts && "secret" in opts ? opts.secret : loadDaemonSecret();
+  const secret = opts && "secret" in opts ? opts.secret : await loadDaemonSecret();
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (secret) headers["x-solios-secret"] = secret;
 

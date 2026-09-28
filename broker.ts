@@ -42,6 +42,7 @@ import {
 import { SshSecretFetcher } from "./secret-fetcher.ts";
 import { logCrossHost, checkRate } from "./cross-host-log.ts";
 import { parseVscodeReplyAddress, deliverVscodeReply } from "./vscode-reply.ts";
+import { parseTicketAddress, deliverTicketMessage } from "./ticket-address.ts";
 
 const PORT_LOCAL = parseInt(process.env.CLAUDE_PEERS_PORT ?? "7899", 10);
 const PORT_PEER = parseInt(process.env.CLAUDE_PEERS_PEER_PORT ?? "7900", 10);
@@ -425,6 +426,12 @@ async function handleSendMessage(
     const r = await deliverVscodeReply(qid, body.text);
     return r.ok ? { ok: true } : { ok: false, error: r.text };
   }
+
+  // `ticket:<repo>#<n>` names an issue's ticket-session, not a peer. The
+  // solios-mcp daemon's answer is the delivery contract; a refusal (closed
+  // issue, no session) comes back to the sender as this failed send.
+  const ticket = parseTicketAddress(body.to_id);
+  if (ticket) return deliverTicketMessage(ticket, body.from_id, body.text);
 
   // Detect @machine suffix → forward.
   const at = body.to_id.lastIndexOf("@");

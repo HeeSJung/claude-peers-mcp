@@ -10,6 +10,9 @@ export interface Peer {
   summary: string;
   registered_at: string; // ISO timestamp
   last_seen: string; // ISO timestamp
+  // Registered from a headless one-shot turn (see headless.ts); seat-address
+  // resolvers skip these rows.
+  headless: boolean;
 }
 
 export interface Message {
@@ -29,6 +32,7 @@ export interface RegisterRequest {
   git_root: string | null;
   tty: string | null;
   summary: string;
+  headless?: boolean; // absent (old clients) = false
 }
 
 export interface RegisterResponse {
@@ -67,6 +71,7 @@ export interface PeerEventRequest {
     summary: string;
     registered_at: string;
     last_seen: string;
+    headless?: boolean; // absent (older brokers) = false
   };
 }
 

@@ -39,6 +39,7 @@ import {
   type Seat,
 } from "./codex-seat.ts";
 import { parseVscodeReplyAddress, deliverVscodeReply } from "./vscode-reply.ts";
+import { readHeadlessEnv } from "./headless.ts";
 
 // --- Configuration ---
 
@@ -572,6 +573,7 @@ async function main() {
     git_root: myGitRoot,
     tty,
     summary: initialSummary,
+    headless: readHeadlessEnv(process.env),
   });
   myId = reg.id;
   log(`Registered as peer ${myId}`);

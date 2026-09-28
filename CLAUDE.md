@@ -16,6 +16,7 @@ Peer discovery and messaging MCP channel for Claude Code instances.
 - `shared/summarize.ts` — Auto-summary generation via gpt-5.4-nano.
 - `cli.ts` — CLI utility for inspecting broker state.
 - `vscode-reply.ts` — Routes `send_message` to `vscode@mac:<qid>` into the VS Code mailbox via `crew-reply-vscode.sh`. Both the broker's `/send-message` (every HTTP client) and `server.ts` (a session before it registers) call it.
+- `headless.ts` — The headless marker: `server.ts` reads `CLAUDE_PEERS_HEADLESS` at startup and sends `headless` on `/register`; the broker stores it, returns it on `/list-peers`, and carries it on `peer-events` fanout.
 
 ## Running
 

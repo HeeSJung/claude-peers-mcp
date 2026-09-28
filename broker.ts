@@ -66,7 +66,8 @@ db.run(`
     tty TEXT,
     summary TEXT NOT NULL DEFAULT '',
     registered_at TEXT NOT NULL,
-    last_seen TEXT NOT NULL
+    last_seen TEXT NOT NULL,
+    headless INTEGER NOT NULL DEFAULT 0
   )
 `);
 
@@ -115,9 +116,29 @@ db.run(`
     summary        TEXT NOT NULL DEFAULT '',
     registered_at  TEXT NOT NULL,
     last_seen      TEXT NOT NULL,
+    headless       INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (machine, id)
   )
 `);
+
+// Migration for DBs created before the headless marker (sooth-os/sooth#1141).
+for (const table of ["peers", "remote_peers"]) {
+  try {
+    db.run(`ALTER TABLE ${table} ADD COLUMN headless INTEGER NOT NULL DEFAULT 0`);
+  } catch {
+    // Column already exists — no-op.
+  }
+}
+
+// SQLite stores the flag as 0/1; the API speaks boolean.
+type PeerRow = Omit<Peer, "headless"> & { headless: number };
+function toPeer(row: PeerRow): Peer {
+  return { ...row, headless: row.headless === 1 };
+}
+// Absent on the wire (old clients, older brokers) = false.
+function toHeadlessColumn(flag: boolean | undefined): number {
+  return flag === true ? 1 : 0;
+}
 
 // --- Stale-peer cleanup (existing behavior) ---
 
@@ -156,8 +177,8 @@ cleanStalePeers();
 // --- Prepared statements ---
 
 const insertPeer = db.prepare(`
-  INSERT INTO peers (id, pid, cwd, git_root, tty, summary, registered_at, last_seen)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO peers (id, pid, cwd, git_root, tty, summary, registered_at, last_seen, headless)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 const updateLastSeen = db.prepare(`UPDATE peers SET last_seen = ? WHERE id = ?`);
 const updateSummary = db.prepare(`UPDATE peers SET summary = ? WHERE id = ?`);
@@ -193,13 +214,14 @@ const setBrokerEventTs = db.prepare(`
 `);
 
 const upsertRemotePeer = db.prepare(`
-  INSERT INTO remote_peers (machine, id, cwd, git_root, summary, registered_at, last_seen)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO remote_peers (machine, id, cwd, git_root, summary, registered_at, last_seen, headless)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(machine, id) DO UPDATE SET
     cwd = excluded.cwd,
     git_root = excluded.git_root,
     summary = excluded.summary,
-    last_seen = excluded.last_seen
+    last_seen = excluded.last_seen,
+    headless = excluded.headless
 `);
 const deleteRemotePeer = db.prepare(`DELETE FROM remote_peers WHERE machine = ? AND id = ?`);
 const deleteRemotePeersByMachine = db.prepare(`DELETE FROM remote_peers WHERE machine = ?`);
@@ -270,18 +292,10 @@ async function ensurePeerSecret(machine: string): Promise<Buffer | null> {
 // --- Local request handlers ---
 
 function snapshotLocalPeer(id: string): PeerEventRequest["peer"] | null {
-  const row = selectPeerById.get(id) as
-    | (Peer & { registered_at: string; last_seen: string })
-    | undefined;
+  const row = selectPeerById.get(id) as PeerRow | undefined;
   if (!row) return null;
-  return {
-    id: row.id,
-    cwd: row.cwd,
-    git_root: row.git_root,
-    summary: row.summary,
-    registered_at: row.registered_at,
-    last_seen: row.last_seen,
-  };
+  const { id: peerId, cwd, git_root, summary, registered_at, last_seen, headless } = toPeer(row);
+  return { id: peerId, cwd, git_root, summary, registered_at, last_seen, headless };
 }
 
 function handleRegister(body: RegisterRequest): RegisterResponse {
@@ -298,7 +312,17 @@ function handleRegister(body: RegisterRequest): RegisterResponse {
       peer: snapshotPeerStub(existing.id),
     });
   }
-  insertPeer.run(id, body.pid, body.cwd, body.git_root, body.tty, body.summary, now, now);
+  insertPeer.run(
+    id,
+    body.pid,
+    body.cwd,
+    body.git_root,
+    body.tty,
+    body.summary,
+    now,
+    now,
+    toHeadlessColumn(body.headless),
+  );
   const snap = snapshotLocalPeer(id);
   if (snap) {
     void fanoutPeerEvent({ event_type: "register", machine: SELF_MACHINE, peer: snap });
@@ -330,19 +354,20 @@ function handleSetSummary(body: SetSummaryRequest): void {
 
 function handleListPeers(body: ListPeersRequest): Peer[] {
   let peers: Peer[];
+  const rowsToPeers = (rows: unknown[]) => (rows as PeerRow[]).map(toPeer);
   switch (body.scope) {
     case "machine":
-      peers = selectAllPeers.all() as Peer[];
+      peers = rowsToPeers(selectAllPeers.all());
       break;
     case "directory":
-      peers = selectPeersByDirectory.all(body.cwd) as Peer[];
+      peers = rowsToPeers(selectPeersByDirectory.all(body.cwd));
       break;
     case "repo":
-      if (body.git_root) peers = selectPeersByGitRoot.all(body.git_root) as Peer[];
-      else peers = selectPeersByDirectory.all(body.cwd) as Peer[];
+      if (body.git_root) peers = rowsToPeers(selectPeersByGitRoot.all(body.git_root));
+      else peers = rowsToPeers(selectPeersByDirectory.all(body.cwd));
       break;
     case "machine+remote": {
-      const local = selectAllPeers.all() as Peer[];
+      const local = rowsToPeers(selectAllPeers.all());
       const remote = selectAllRemotePeers.all() as Array<{
         machine: string;
         id: string;
@@ -351,6 +376,7 @@ function handleListPeers(body: ListPeersRequest): Peer[] {
         summary: string;
         registered_at: string;
         last_seen: string;
+        headless: number;
       }>;
       const remoteAsPeer: Peer[] = remote.map((r) => ({
         id: `${r.id}@${r.machine}`,
@@ -361,12 +387,13 @@ function handleListPeers(body: ListPeersRequest): Peer[] {
         summary: r.summary,
         registered_at: r.registered_at,
         last_seen: r.last_seen,
+        headless: r.headless === 1,
       }));
       peers = [...local, ...remoteAsPeer];
       break;
     }
     default:
-      peers = selectAllPeers.all() as Peer[];
+      peers = rowsToPeers(selectAllPeers.all());
   }
 
   if (body.exclude_id) {
@@ -669,6 +696,7 @@ function applyPeerEvent(ev: PeerEventRequest): void {
     ev.peer.summary,
     ev.peer.registered_at,
     ev.peer.last_seen,
+    toHeadlessColumn(ev.peer.headless),
   );
 }
 

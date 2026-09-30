@@ -41,6 +41,7 @@ import {
 } from "./hmac.ts";
 import { SshSecretFetcher } from "./secret-fetcher.ts";
 import { logCrossHost, checkRate } from "./cross-host-log.ts";
+import { createTargetFilter } from "./fanout-targets.ts";
 import { parseVscodeReplyAddress, deliverVscodeReply } from "./vscode-reply.ts";
 import { parseTicketAddress, deliverTicketMessage } from "./ticket-address.ts";
 
@@ -251,6 +252,14 @@ const sshFetcher = new SshSecretFetcher();
 const peerEntries = new Map<string, BrokerPeerEntry>();
 // Last heartbeat fanout per peer-id (throttling)
 const lastHeartbeatFanout = new Map<string, number>();
+// peer_brokers rows whose machine is still in brokers.json (peerEntries).
+const configuredTargets = createTargetFilter((machine) => {
+  console.error(`[claude-peers broker] skipping peer_brokers row ${machine}: not in brokers.json`);
+  void logCrossHost(`SKIP ${machine} not-in-brokers.json`);
+});
+function configuredPeerBrokers<T extends { machine: string }>(rows: T[]): T[] {
+  return configuredTargets(rows, new Set(peerEntries.keys()), SELF_MACHINE);
+}
 
 async function loadCrossBrokerState(): Promise<void> {
   brokersConfig = loadBrokersConfig();
@@ -503,7 +512,7 @@ async function fanoutPeerEvent(event: PeerEventRequest): Promise<void> {
     ssh_alias: string;
     status: string;
   }>;
-  const targets = brokers.filter((b) => b.machine !== SELF_MACHINE);
+  const targets = configuredPeerBrokers(brokers);
   await Promise.all(
     targets.map(async (b) => {
       const result = await peerPostJson<{ ok: boolean }>(b.machine, "POST", "/peer-events", event);
@@ -746,7 +755,7 @@ async function probeOnePeer(machine: string): Promise<void> {
 async function healthLoop(): Promise<void> {
   if (!brokersConfig) return;
   const brokers = selectAllPeerBrokers.all() as Array<{ machine: string }>;
-  await Promise.all(brokers.filter((b) => b.machine !== SELF_MACHINE).map((b) => probeOnePeer(b.machine)));
+  await Promise.all(configuredPeerBrokers(brokers).map((b) => probeOnePeer(b.machine)));
 }
 
 function janitor(): void {
@@ -756,8 +765,7 @@ function janitor(): void {
     status: string;
     stale_since: string | null;
   }>;
-  for (const b of brokers) {
-    if (b.machine === SELF_MACHINE) continue;
+  for (const b of configuredPeerBrokers(brokers)) {
     if (b.status === "stale" && b.stale_since) {
       const staleMs = Date.parse(b.stale_since);
       if (Number.isFinite(staleMs) && now - staleMs > DOWN_AFTER_MS) {

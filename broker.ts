@@ -253,12 +253,12 @@ const peerEntries = new Map<string, BrokerPeerEntry>();
 // Last heartbeat fanout per peer-id (throttling)
 const lastHeartbeatFanout = new Map<string, number>();
 // peer_brokers rows whose machine is still in brokers.json (peerEntries).
-const configuredTargets = createTargetFilter((machine) => {
+const filterToConfigured = createTargetFilter((machine) => {
   console.error(`[claude-peers broker] skipping peer_brokers row ${machine}: not in brokers.json`);
   void logCrossHost(`SKIP ${machine} not-in-brokers.json`);
 });
 function configuredPeerBrokers<T extends { machine: string }>(rows: T[]): T[] {
-  return configuredTargets(rows, new Set(peerEntries.keys()), SELF_MACHINE);
+  return filterToConfigured(rows, new Set(peerEntries.keys()), SELF_MACHINE);
 }
 
 async function loadCrossBrokerState(): Promise<void> {
@@ -765,7 +765,8 @@ function janitor(): void {
     status: string;
     stale_since: string | null;
   }>;
-  for (const b of configuredPeerBrokers(brokers)) {
+  for (const b of brokers) {
+    if (b.machine === SELF_MACHINE) continue;
     if (b.status === "stale" && b.stale_since) {
       const staleMs = Date.parse(b.stale_since);
       if (Number.isFinite(staleMs) && now - staleMs > DOWN_AFTER_MS) {

@@ -39,10 +39,14 @@ export interface RotatingLogOptions {
   now?: () => Date;
 }
 
-/** `<name>.<YYYY-MM-DD>[-N].gz` → sort key; null for anything else. */
+/**
+ * `<name>.<YYYY-MM-DD>[-N]` with or without `.gz` → sort key; null otherwise.
+ * Raw (un-gzipped) archives count too, so one left by a failed gzip is still
+ * pruned in turn.
+ */
 function archiveKey(logName: string, file: string): [string, number] | null {
   if (!file.startsWith(`${logName}.`)) return null;
-  const m = /^(\d{4}-\d{2}-\d{2})(?:-(\d+))?\.gz$/.exec(file.slice(logName.length + 1));
+  const m = /^(\d{4}-\d{2}-\d{2})(?:-(\d+))?(?:\.gz)?$/.exec(file.slice(logName.length + 1));
   return m ? [m[1]!, m[2] ? Number(m[2]) : 0] : null;
 }
 
@@ -53,8 +57,15 @@ function archiveName(path: string, date: string): string {
   }
 }
 
+/** Gzip `src` to `src.gz`. On failure drop the partial .gz and keep `src`. */
 async function gzipAndRemove(src: string): Promise<void> {
-  await pipeline(createReadStream(src), createGzip(), createWriteStream(`${src}.gz`));
+  try {
+    await pipeline(createReadStream(src), createGzip(), createWriteStream(`${src}.gz`));
+  } catch (e) {
+    console.error("[cross-host-log] gzip failed, keeping raw archive:", e instanceof Error ? e.message : e);
+    await unlink(`${src}.gz`).catch(() => {});
+    return;
+  }
   await unlink(src);
 }
 
@@ -83,12 +94,10 @@ export function createRotatingLog(opts: RotatingLogOptions): (line: string) => P
       const archive = archiveName(opts.path, now().toISOString().slice(0, 10));
       await rename(opts.path, archive);
       await appendFile(opts.path, text, "utf8");
-      try {
-        await gzipAndRemove(archive);
-        await pruneArchives(opts.path, opts.keep);
-      } catch (e) {
-        console.error("[cross-host-log] rotation cleanup failed:", e instanceof Error ? e.message : e);
-      }
+      const warn = (what: string) => (e: unknown) =>
+        console.error(`[cross-host-log] ${what} failed:`, e instanceof Error ? e.message : e);
+      await gzipAndRemove(archive).catch(warn("archive cleanup"));
+      await pruneArchives(opts.path, opts.keep).catch(warn("prune"));
       return;
     }
     await appendFile(opts.path, text, "utf8");

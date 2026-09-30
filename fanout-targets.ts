@@ -4,15 +4,16 @@
  * peer_brokers (SQLite) outlives brokers.json: a machine removed from the
  * config keeps its row. Talking to it fails `unknown-machine` in
  * peerPostJson, so fanout, health probes and the janitor use only rows whose
- * machine is still in the loaded brokers.json. A skipped machine is reported
- * once per process lifetime, never per heartbeat.
+ * machine is still in the loaded brokers.json. Fanout and health probes use
+ * it; the janitor does not (it must still mark stale rows down). A skipped
+ * machine is reported once per process lifetime, never per heartbeat.
  */
 
 export type SkipReporter = (machine: string) => void;
 
 export function createTargetFilter(report: SkipReporter) {
   const reported = new Set<string>();
-  return function configuredTargets<T extends { machine: string }>(
+  return function <T extends { machine: string }>(
     rows: T[],
     configured: ReadonlySet<string>,
     selfMachine: string,

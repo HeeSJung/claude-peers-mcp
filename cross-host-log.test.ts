@@ -18,9 +18,11 @@ describe("createRotatingLog", () => {
     dir = mkdtempSync(join(tmpdir(), "cross-host-log-"));
     const path = join(dir, "cross-host.log");
     const date = "2026-09-30";
-    // Seven pre-existing archives, oldest first; the hand-made one included.
+    // Seven pre-existing archives, oldest first: the hand-made one, and a raw
+    // one a failed gzip would leave behind (must be pruned in turn).
     const old = [
       "cross-host.log.2026-08-01.gz",
+      "cross-host.log.2026-08-15",
       "cross-host.log.2026-09-01.gz",
       "cross-host.log.2026-09-02.gz",
       "cross-host.log.2026-09-03.gz",
@@ -46,6 +48,7 @@ describe("createRotatingLog", () => {
     expect(archives).toHaveLength(5);
     // Oldest by date then suffix are gone; the newest rotations are present.
     expect(archives).not.toContain("cross-host.log.2026-08-01.gz");
+    expect(files).not.toContain("cross-host.log.2026-08-15");
     expect(archives).toContain(`cross-host.log.${date}-2.gz`);
     expect(files).toContain("unrelated.gz");
     // No un-gzipped archive left behind.

@@ -39,7 +39,7 @@ import {
   type Seat,
 } from "./codex-seat.ts";
 import { parseVscodeReplyAddress, deliverVscodeReply } from "./vscode-reply.ts";
-import { readHeadlessEnv } from "./headless.ts";
+import { readAddressEnv, readHeadlessEnv } from "./headless.ts";
 
 // --- Configuration ---
 
@@ -196,7 +196,7 @@ const TOOLS = [
   {
     name: "send_message",
     description:
-      "Send a message to another Claude Code instance by peer ID. The message will be pushed into their session immediately via channel notification. A from_id of the form vscode@mac:<qid> is a VS Code question; send_message to it puts the reply into that question's chat. A to_id of the form ticket:<repo-name>#<issue> (e.g. ticket:sooth#1140) is an issue's ticket-session; the message becomes a new turn there, and a closed or never-mentioned issue returns an error.",
+      "Send a message to another Claude Code instance by peer ID. The message will be pushed into their session immediately via channel notification. A from_id of the form vscode@mac:<qid> is a VS Code question; send_message to it puts the reply into that question's chat. A to_id of the form ticket:<repo-name>#<issue> (e.g. ticket:sooth#1140) is an issue's ticket-session, and side:<side id> (e.g. side:sori-side1) is an open Side Session; the message becomes a new turn there, and a closed or unknown session returns an error. A from_id of either form is that headless session's address on this machine: reply to it as given from here; it is never reachable from another machine.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -574,6 +574,7 @@ async function main() {
     tty,
     summary: initialSummary,
     headless: readHeadlessEnv(process.env),
+    address: readAddressEnv(process.env),
   });
   myId = reg.id;
   log(`Registered as peer ${myId}`);

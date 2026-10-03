@@ -1,25 +1,28 @@
 /**
- * Route a `send_message` to a TICKET ADDRESS (`ticket:<repoName>#<issue>`) into
- * the solios-mcp daemon's inbox, where it becomes a new turn on that issue's
- * ticket-session (sooth-os/sooth#1140, spec #464).
+ * Route a `send_message` to a SESSION ADDRESS into the solios-mcp daemon's
+ * inbox, where it becomes a new turn on that headless session. Kinds:
+ * `ticket:<repoName>#<issue>` (an issue's ticket-session, sooth-os/sooth#1140,
+ * spec #464) and `side:<side id>` (a Side Session).
  *
- * The daemon owns the address format (solios mcp-daemon/ticket-address.ts) and
- * the admission verdict (mcp-daemon/ticket-session-peer.ts). The broker holds
- * no ticket state: it POSTs `{source:'peer', thread_id, sender, content}` to
- * the loopback inbox and relays the answer —
+ * The daemon owns the address grammar (solios mcp-daemon) and the admission
+ * verdict. The broker knows only the prefix list below; it holds no session
+ * state: it POSTs `{source:'peer', thread_id, sender, content}` to the loopback
+ * inbox and relays the answer:
  *   200 → delivered (queued as a turn)
- *   400 malformed / 404 no session for the issue / 409 closed or gone /
- *   503 open-state unknown / 401 bad secret → failed send, body = the reason.
+ *   400 malformed / 404 no such session / 409 closed, opening or gone /
+ *   429 loop brake / 503 state unknown / 401 bad secret → failed send, body =
+ *   the reason.
  * A message never creates a session; that rule is the daemon's.
  */
 
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-// Mirrors the daemon's parser, minus its bare `gh:` form: the broker routes
-// only the published address. No `@`, `:`-free repo name, positive issue number
-// — so it can never be a peer id ([a-z0-9]{8}) or the `<id>@<machine>` form.
-const TICKET_ADDRESS = /^ticket:[A-Za-z0-9._-]+#[1-9][0-9]*$/;
+/**
+ * Every daemon-owned address prefix. A new headless kind is one entry here;
+ * the solios daemon's copy is pinned to this list by test.
+ */
+export const DAEMON_ADDRESS_PREFIXES = ["ticket:", "side:"] as const;
 
 /** The solios-mcp daemon's loopback listener; `CLAUDE_PEERS_TICKET_INBOX_URL` overrides it (tests). */
 const DEFAULT_INBOX_BASE_URL = "http://127.0.0.1:8770";
@@ -27,9 +30,17 @@ const DEFAULT_INBOX_BASE_URL = "http://127.0.0.1:8770";
 /** Admission runs a live issue-state probe, so allow it a few seconds. */
 const INBOX_TIMEOUT_MS = 15_000;
 
-/** The address itself when `toId` is a ticket address, else null. */
-export function parseTicketAddress(toId: string): string | null {
-  return TICKET_ADDRESS.test(toId) ? toId : null;
+/**
+ * The address itself when `toId` is a daemon-owned prefix plus a non-empty key
+ * with no whitespace and no `@`, else null. The `@<machine>` form stays the
+ * remote-forward branch's; the key grammar is the daemon's to refuse.
+ */
+export function parseSessionAddress(toId: string): string | null {
+  const prefix = DAEMON_ADDRESS_PREFIXES.find((p) => toId.startsWith(p));
+  if (!prefix) return null;
+  const key = toId.slice(prefix.length);
+  if (key === "" || /\s/.test(key) || key.includes("@")) return null;
+  return toId;
 }
 
 /**
@@ -48,7 +59,7 @@ export async function loadDaemonSecret(): Promise<string | undefined> {
   }
 }
 
-export async function deliverTicketMessage(
+export async function deliverSessionMessage(
   address: string,
   senderId: string,
   text: string,
@@ -62,7 +73,8 @@ export async function deliverTicketMessage(
 
   let res: Response;
   try {
-    // The path target is ignored for peer messages: the seat is the mapping's.
+    // The path target is ignored for peer messages: the daemon dispatches on the
+    // address kind.
     res = await fetch(`${baseUrl}/inbox/ticket`, {
       method: "POST",
       headers,
@@ -71,14 +83,14 @@ export async function deliverTicketMessage(
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: `ticket inbox unreachable at ${baseUrl}: ${msg}` };
+    return { ok: false, error: `session inbox unreachable at ${baseUrl}: ${msg}` };
   }
   if (res.ok) return { ok: true };
   const reason = (await res.text().catch(() => "")).trim();
   return {
     ok: false,
     error: reason
-      ? `ticket inbox refused ${address} (${res.status}): ${reason}`
-      : `ticket inbox refused ${address} (${res.status})`,
+      ? `session inbox refused ${address} (${res.status}): ${reason}`
+      : `session inbox refused ${address} (${res.status})`,
   };
 }

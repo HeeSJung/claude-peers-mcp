@@ -115,6 +115,7 @@ bun cli.ts kill-broker       # stop the broker
 | `CLAUDE_PEERS_CONFIG_DIR`               | `~/.claude-peers/`       | Where `brokers.json` and `secret-current` live                        |
 | `CLAUDE_PEERS_CROSS_HOST_LOG`           | `<config-dir>/cross-host.log` | Audit log for cross-broker requests                              |
 | `CLAUDE_PEERS_HEADLESS`                | unset                    | `1`/`true`/`yes` registers this MCP server's peer as headless (a one-shot turn, not a resident seat); `/list-peers` rows (local and remote) carry `headless` so seat-address resolvers can skip them |
+| `CLAUDE_PEERS_ADDRESS`                 | unset                    | The headless turn's durable address (`ticket:<repo>#<n>`, `side:<side id>`, or a live local peer id such as a remote crewmate's stand-in); the broker delivers this peer's messages with it as `from_id`. Ignored unless the peer is headless |
 | `OPENAI_API_KEY`                        | —                        | Enables auto-summary via gpt-5.4-nano                                 |
 
 ## Requirements

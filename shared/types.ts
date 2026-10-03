@@ -33,6 +33,7 @@ export interface RegisterRequest {
   tty: string | null;
   summary: string;
   headless?: boolean; // absent (old clients) = false
+  address?: string; // the turn's durable address (headless.ts); absent = none
 }
 
 export interface RegisterResponse {

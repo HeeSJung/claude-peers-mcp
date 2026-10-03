@@ -1,0 +1,30 @@
+{
+  "prefixes": [
+    "ticket:",
+    "side:"
+  ],
+  "forwarded": [
+    "ticket:sooth#1138",
+    "ticket:claude-peers-mcp#7",
+    "ticket:my.repo_x#42",
+    "ticket:sooth#0",
+    "side:sori-side1",
+    "side:dad-invst-side12"
+  ],
+  "notForwarded": [
+    "ticket:",
+    "side:",
+    "ticket:so oth#12",
+    "side:sori side1",
+    "side:sori-side1\n",
+    "ticket:sooth#12@mac",
+    "side:sori-side1@mac",
+    "gh:sooth#12",
+    "panel:sori",
+    "abc12345",
+    "k3pogncc@mac",
+    "vscode@mac:q1758600000-12345-678",
+    "TICKET:sooth#12",
+    "SIDE:sori-side1"
+  ]
+}

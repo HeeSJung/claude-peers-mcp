@@ -5,14 +5,15 @@
  * scripts/loopback-smoke.ts): A registers a flagged peer, an unflagged peer,
  * and an old-client peer whose /register body has no `headless` key at all.
  * A's own /list-peers and B's machine+remote view (fed by peer-events fanout)
- * must both report the flag.
+ * must both report the flag. Cross-host, a headless peer's session address
+ * stays home (the wire carries its peer id) while a stand-in address is sent.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, type Subprocess } from "bun";
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { HEADLESS_ENV, readHeadlessEnv } from "./headless.ts";
+import { ADDRESS_ENV, HEADLESS_ENV, readAddressEnv, readHeadlessEnv } from "./headless.ts";
 
 describe("readHeadlessEnv", () => {
   test("unset env is not headless", () => {
@@ -23,6 +24,18 @@ describe("readHeadlessEnv", () => {
   });
   test.each(["", "0", "false", "no"])("%p is not headless", (v) => {
     expect(readHeadlessEnv({ [HEADLESS_ENV]: v })).toBe(false);
+  });
+});
+
+describe("readAddressEnv", () => {
+  test("unset env has no address", () => {
+    expect(readAddressEnv({})).toBeUndefined();
+  });
+  test.each(["", "   "])("blank %p has no address", (v) => {
+    expect(readAddressEnv({ [ADDRESS_ENV]: v })).toBeUndefined();
+  });
+  test("the address is returned trimmed", () => {
+    expect(readAddressEnv({ [ADDRESS_ENV]: " side:sori-side1\n" })).toBe("side:sori-side1");
   });
 });
 
@@ -103,10 +116,14 @@ type Row = { id: string; headless: boolean };
 
 // /list-peers drops local rows whose pid is dead, so each peer needs a live pid.
 const sleepers: Subprocess[] = [];
-const ids: { flagged: string; unflagged: string; oldClient: string } = {
+const ids = {
   flagged: "",
   unflagged: "",
   oldClient: "",
+  addressed: "",
+  standIn: "",
+  standInTurn: "",
+  onB: "",
 };
 
 beforeAll(async () => {
@@ -119,7 +136,7 @@ beforeAll(async () => {
   await waitUp(B);
   await Bun.sleep(500);
 
-  for (let i = 0; i < 3; i++) sleepers.push(spawn({ cmd: ["sleep", "60"] }));
+  for (let i = 0; i < 7; i++) sleepers.push(spawn({ cmd: ["sleep", "60"] }));
   const base = { git_root: null, tty: null, summary: "" };
   ids.flagged = (
     await post<{ id: string }>(A, "/register", { ...base, pid: sleepers[0]!.pid, cwd: "/home/x", headless: true })
@@ -131,7 +148,27 @@ beforeAll(async () => {
   ids.oldClient = (
     await post<{ id: string }>(A, "/register", { ...base, pid: sleepers[2]!.pid, cwd: "/home/x" })
   ).id;
-  await Bun.sleep(800); // let the register fanout reach B
+  ids.addressed = (
+    await post<{ id: string }>(A, "/register", {
+      ...base,
+      pid: sleepers[3]!.pid,
+      cwd: "/home/x",
+      headless: true,
+      address: "side:sori-side1",
+    })
+  ).id;
+  ids.standIn = (await post<{ id: string }>(A, "/register", { ...base, pid: sleepers[5]!.pid, cwd: "/home/x" })).id;
+  ids.standInTurn = (
+    await post<{ id: string }>(A, "/register", {
+      ...base,
+      pid: sleepers[6]!.pid,
+      cwd: "/home/x",
+      headless: true,
+      address: ids.standIn,
+    })
+  ).id;
+  ids.onB = (await post<{ id: string }>(B, "/register", { ...base, pid: sleepers[4]!.pid, cwd: "/home/y" })).id;
+  await Bun.sleep(800); // let the register fanout reach the other broker
 }, 20_000);
 
 afterAll(async () => {
@@ -171,5 +208,35 @@ describe("headless marker through the broker", () => {
     await Bun.sleep(500);
     const rows = await post<Row[]>(B, "/list-peers", { scope: "machine+remote", cwd: "/", git_root: null });
     expect(flagOf(rows, `${ids.flagged}@${A.machine}`)).toBe(true);
+  });
+});
+
+describe("registered address across hosts", () => {
+  // Explicit `<id>@<machine>` and a bare id A knows only from remote_peers
+  // take the two forward branches; both must stamp alike.
+  const targets = () => [`${ids.onB}@${B.machine}`, ids.onB];
+
+  async function fromIdsOnB(): Promise<string[]> {
+    const polled = await post<{ messages: { from_id: string }[] }>(B, "/poll-messages", { id: ids.onB });
+    return polled.messages.map((m) => m.from_id);
+  }
+
+  test("a session address never crosses hosts: the wire carries the peer id", async () => {
+    for (const to_id of targets()) {
+      expect(await post<{ ok: boolean }>(A, "/send-message", { from_id: ids.addressed, to_id, text: "ask" })).toEqual({ ok: true });
+    }
+    expect(await fromIdsOnB()).toEqual([`${ids.addressed}@${A.machine}`, `${ids.addressed}@${A.machine}`]);
+  });
+
+  test("a stand-in address is stamped on both forward branches", async () => {
+    for (const to_id of targets()) {
+      expect(await post<{ ok: boolean }>(A, "/send-message", { from_id: ids.standInTurn, to_id, text: "ask" })).toEqual({ ok: true });
+    }
+    expect(await fromIdsOnB()).toEqual([`${ids.standIn}@${A.machine}`, `${ids.standIn}@${A.machine}`]);
+  });
+
+  test("the remote view stays a headless row under the peer id", async () => {
+    const rows = await post<Row[]>(B, "/list-peers", { scope: "machine+remote", cwd: "/", git_root: null });
+    expect(flagOf(rows, `${ids.addressed}@${A.machine}`)).toBe(true);
   });
 });

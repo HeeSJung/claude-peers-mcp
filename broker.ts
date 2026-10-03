@@ -43,7 +43,8 @@ import { SshSecretFetcher } from "./secret-fetcher.ts";
 import { logCrossHost, checkRate } from "./cross-host-log.ts";
 import { createTargetFilter } from "./fanout-targets.ts";
 import { parseVscodeReplyAddress, deliverVscodeReply } from "./vscode-reply.ts";
-import { parseTicketAddress, deliverTicketMessage } from "./ticket-address.ts";
+import { parseSessionAddress, deliverSessionMessage } from "./session-address.ts";
+import { normalizeAddress } from "./headless.ts";
 
 const PORT_LOCAL = parseInt(process.env.CLAUDE_PEERS_PORT ?? "7899", 10);
 const PORT_PEER = parseInt(process.env.CLAUDE_PEERS_PEER_PORT ?? "7900", 10);
@@ -69,7 +70,8 @@ db.run(`
     summary TEXT NOT NULL DEFAULT '',
     registered_at TEXT NOT NULL,
     last_seen TEXT NOT NULL,
-    headless INTEGER NOT NULL DEFAULT 0
+    headless INTEGER NOT NULL DEFAULT 0,
+    address TEXT
   )
 `);
 
@@ -132,10 +134,19 @@ for (const table of ["peers", "remote_peers"]) {
   }
 }
 
-// SQLite stores the flag as 0/1; the API speaks boolean.
-type PeerRow = Omit<Peer, "headless"> & { headless: number };
+// Migration for DBs created before the registered address column.
+try {
+  db.run("ALTER TABLE peers ADD COLUMN address TEXT");
+} catch {
+  // Column already exists: no-op.
+}
+
+// SQLite stores the flag as 0/1; the API speaks boolean. The address is a
+// routing fact on outbound messages, never a seat, so /list-peers omits it.
+type PeerRow = Omit<Peer, "headless"> & { headless: number; address: string | null };
 function toPeer(row: PeerRow): Peer {
-  return { ...row, headless: row.headless === 1 };
+  const { address: _address, ...peer } = row;
+  return { ...peer, headless: row.headless === 1 };
 }
 // Absent on the wire (old clients, older brokers) = false.
 function toHeadlessColumn(flag: boolean | undefined): number {
@@ -179,8 +190,8 @@ cleanStalePeers();
 // --- Prepared statements ---
 
 const insertPeer = db.prepare(`
-  INSERT INTO peers (id, pid, cwd, git_root, tty, summary, registered_at, last_seen, headless)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO peers (id, pid, cwd, git_root, tty, summary, registered_at, last_seen, headless, address)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 const updateLastSeen = db.prepare(`UPDATE peers SET last_seen = ? WHERE id = ?`);
 const updateSummary = db.prepare(`UPDATE peers SET summary = ? WHERE id = ?`);
@@ -332,6 +343,7 @@ function handleRegister(body: RegisterRequest): RegisterResponse {
     now,
     now,
     toHeadlessColumn(body.headless),
+    normalizeAddress(body.address) ?? null,
   );
   const snap = snapshotLocalPeer(id);
   if (snap) {
@@ -423,6 +435,25 @@ function handleListPeers(body: ListPeersRequest): Peer[] {
   });
 }
 
+/**
+ * The `from_id` a message from `peerId` carries on `route`. A headless peer's
+ * registered address (CLAUDE_PEERS_ADDRESS) replaces its peer id when the
+ * address is a live local peer id (a remote crewmate's stand-in), or, on the
+ * local route only, a session address: the daemon inbox is on this box, so
+ * another machine could not answer `side:x@<machine>`. Anything else sends as
+ * the peer id. Judged per send, so a stand-in that has gone falls back.
+ * Trust boundary: the local port is loopback-only, so any local headless peer
+ * may name any live local peer id as its address; that is accepted.
+ */
+function senderIdFor(peerId: string, route: "local" | "cross-host"): string {
+  const row = selectPeerById.get(peerId) as PeerRow | undefined;
+  const address = row?.address;
+  if (!row || row.headless !== 1 || !address) return peerId;
+  if (route === "local" && parseSessionAddress(address)) return address;
+  if (selectPeerById.get(address)) return address;
+  return peerId;
+}
+
 async function handleSendMessage(
   body: SendMessageRequest,
 ): Promise<{ ok: boolean; error?: string }> {
@@ -436,11 +467,11 @@ async function handleSendMessage(
     return r.ok ? { ok: true } : { ok: false, error: r.text };
   }
 
-  // `ticket:<repo>#<n>` names an issue's ticket-session, not a peer. The
-  // solios-mcp daemon's answer is the delivery contract; a refusal (closed
-  // issue, no session) comes back to the sender as this failed send.
-  const ticket = parseTicketAddress(body.to_id);
-  if (ticket) return deliverTicketMessage(ticket, body.from_id, body.text);
+  // `ticket:<repo>#<n>` and `side:<side id>` name a headless session, not a
+  // peer. The solios-mcp daemon's answer is the delivery contract; a refusal
+  // (closed, unknown, braked) comes back to the sender as this failed send.
+  const session = parseSessionAddress(body.to_id);
+  if (session) return deliverSessionMessage(session, senderIdFor(body.from_id, "local"), body.text);
 
   // Detect @machine suffix → forward.
   const at = body.to_id.lastIndexOf("@");
@@ -448,7 +479,7 @@ async function handleSendMessage(
     const targetId = body.to_id.slice(0, at);
     const targetMachine = body.to_id.slice(at + 1);
     return forwardToRemoteBroker(targetMachine, {
-      from_id: body.from_id,
+      from_id: senderIdFor(body.from_id, "cross-host"),
       from_machine: SELF_MACHINE,
       to_id: targetId,
       text: body.text,
@@ -463,7 +494,7 @@ async function handleSendMessage(
     | { id: string }
     | null;
   if (localTarget) {
-    insertMessage.run(body.from_id, body.to_id, body.text, new Date().toISOString());
+    insertMessage.run(senderIdFor(body.from_id, "local"), body.to_id, body.text, new Date().toISOString());
     return { ok: true };
   }
   const remoteRow = selectRemotePeerById.get(body.to_id) as
@@ -471,7 +502,7 @@ async function handleSendMessage(
     | undefined;
   if (remoteRow) {
     return forwardToRemoteBroker(remoteRow.machine, {
-      from_id: body.from_id,
+      from_id: senderIdFor(body.from_id, "cross-host"),
       from_machine: SELF_MACHINE,
       to_id: remoteRow.id,
       text: body.text,

@@ -47,6 +47,7 @@ const BROKER_PORT = parseInt(process.env.CLAUDE_PEERS_PORT ?? "7899", 10);
 const BROKER_URL = `http://127.0.0.1:${BROKER_PORT}`;
 const POLL_INTERVAL_MS = 1000;
 const HEARTBEAT_INTERVAL_MS = 15_000;
+const UNREGISTER_TIMEOUT_MS = 1500;
 const BROKER_SCRIPT = new URL("./broker.ts", import.meta.url).pathname;
 
 // --- Broker communication ---
@@ -611,23 +612,31 @@ async function main() {
     }
   }, HEARTBEAT_INTERVAL_MS);
 
-  // 8. Clean up on exit
-  const cleanup = async () => {
+  // 8. Clean up on exit. A SIGKILLed parent sends no signal, only closes our
+  // stdin, so stdin EOF (and the transport closing) is a shutdown too
+  // (sooth-os/sooth#1505).
+  let cleaningUp = false;
+  const cleanup = async (reason: string) => {
+    if (cleaningUp) return;
+    cleaningUp = true;
+    log(`Shutting down (${reason})`);
     clearInterval(pollTimer);
     clearInterval(heartbeatTimer);
     if (myId) {
-      try {
-        await brokerFetch("/unregister", { id: myId });
-        log("Unregistered from broker");
-      } catch {
-        // Best effort
-      }
+      const unregister = brokerFetch("/unregister", { id: myId }).then(
+        () => log("Unregistered from broker"),
+        () => {} // Best effort
+      );
+      await Promise.race([unregister, new Promise((r) => setTimeout(r, UNREGISTER_TIMEOUT_MS))]);
     }
     process.exit(0);
   };
 
-  process.on("SIGINT", cleanup);
-  process.on("SIGTERM", cleanup);
+  process.on("SIGINT", () => cleanup("SIGINT"));
+  process.on("SIGTERM", () => cleanup("SIGTERM"));
+  process.stdin.on("end", () => cleanup("stdin end"));
+  process.stdin.on("close", () => cleanup("stdin close"));
+  mcp.onclose = () => cleanup("transport closed");
 }
 
 main().catch((e) => {

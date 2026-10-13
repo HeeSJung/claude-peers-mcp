@@ -27,6 +27,7 @@ import type {
   ForwardRequest,
   ForwardResponse,
   PeerBrokerHealthResponse,
+  PeerBrokerRequest,
 } from "./shared/types.ts";
 import { detectTailscaleIp } from "./tailscale.ts";
 import {
@@ -298,7 +299,7 @@ async function loadCrossBrokerState(): Promise<void> {
  */
 function resolvePeerSecretSync(machine: string): Buffer | Uint8Array | null {
   // Sync getter into the SshSecretFetcher cache. Used by verifyHmac.
-  return (sshFetcher as unknown as { cache: Map<string, Buffer> }).cache.get(machine) ?? null;
+  return sshFetcher.cached(machine) ?? null;
 }
 
 async function ensurePeerSecret(machine: string): Promise<Buffer | null> {
@@ -591,7 +592,7 @@ async function peerPostJson<T>(
   machine: string,
   method: "POST" | "GET",
   path: string,
-  body: unknown,
+  body: PeerBrokerRequest | null,
 ): Promise<PostResult<T>> {
   const entry = peerEntries.get(machine);
   if (!entry) return { ok: false, error: `unknown-machine ${machine}` };

@@ -24,6 +24,7 @@ export function readHeadlessEnv(env: Record<string, string | undefined>): boolea
 export const ADDRESS_ENV = "CLAUDE_PEERS_ADDRESS";
 
 /** A registered address, trimmed; anything blank or non-string is no address. */
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- parser for the JSON /register body
 export function normalizeAddress(raw: unknown): string | undefined {
   return typeof raw === "string" ? raw.trim() || undefined : undefined;
 }

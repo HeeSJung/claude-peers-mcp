@@ -56,6 +56,11 @@ export class SshSecretFetcher implements SecretFetcher {
   has(machine: string): boolean {
     return this.cache.has(machine);
   }
+
+  /** The cached secret, without fetching — for callers that must stay sync. */
+  cached(machine: string): Buffer | undefined {
+    return this.cache.get(machine);
+  }
 }
 
 function runSshSecretRead(sshAlias: string, timeoutMs = 8_000): Promise<string> {

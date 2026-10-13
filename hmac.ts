@@ -55,7 +55,7 @@ export function hmacSign(
   return createHmac("sha256", secret).update(msg, "utf8").digest("hex");
 }
 
-export type SignedHeaders = Record<string, string>;
+export type SignedHeaders = Record<(typeof HEADERS)[keyof typeof HEADERS], string>;
 
 export function buildSignedHeaders(args: {
   selfMachine: string;

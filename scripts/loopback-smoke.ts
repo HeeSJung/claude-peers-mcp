@@ -19,6 +19,7 @@
 import { spawn, type Subprocess } from "bun";
 import { mkdirSync, rmSync, writeFileSync, chmodSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import type { BrokerRequest } from "../shared/types.ts";
 
 const TS_IP = "127.0.0.1"; // bind to loopback for the test (real broker uses real ts-ip)
 
@@ -117,7 +118,7 @@ async function waitFor(url: string, timeoutMs = 5000): Promise<boolean> {
   return false;
 }
 
-async function localPost<T>(b: FakeBroker, path: string, body: unknown): Promise<T> {
+async function localPost<T>(b: FakeBroker, path: string, body: BrokerRequest): Promise<T> {
   const r = await fetch(`http://127.0.0.1:${b.localPort}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -155,7 +156,7 @@ async function dumpStderr(b: FakeBroker): Promise<string> {
 function pass(label: string) {
   console.log(`✓ ${label}`);
 }
-function fail(label: string, info?: unknown): never {
+function fail(label: string, info?: string): never {
   console.log(`✗ ${label}`);
   if (info !== undefined) console.log("  ", info);
   process.exit(1);
@@ -204,7 +205,7 @@ async function main() {
   });
   const remoteRow = peers.find((p) => p.id === `${reg.id}@${A.machine}`);
   if (!remoteRow) {
-    fail("B does not see A's peer via /list-peers machine+remote", peers);
+    fail("B does not see A's peer via /list-peers machine+remote", JSON.stringify(peers));
   }
   pass("A's peer propagated to B's remote_peers (machine+remote scope sees it)");
 
@@ -228,7 +229,7 @@ async function main() {
     to_id: `${regB.id}@${B.machine}`,
     text: "hello-from-A",
   });
-  if (!sendResp.ok) fail("send-message cross-host returned !ok", sendResp);
+  if (!sendResp.ok) fail("send-message cross-host returned !ok", JSON.stringify(sendResp));
   pass("send-message cross-host accepted at A");
 
   // Poll messages on B for regB.
@@ -239,7 +240,7 @@ async function main() {
     { id: regB.id },
   );
   const got = polled.messages.find((m) => m.text === "hello-from-A");
-  if (!got) fail("B did not receive forwarded message", polled);
+  if (!got) fail("B did not receive forwarded message", JSON.stringify(polled));
   if (got.from_id !== `${reg.id}@${A.machine}`) {
     fail(`forwarded message has wrong from_id: ${got.from_id}`);
   }

@@ -52,9 +52,8 @@ function setupA() {
 function pass(label: string) {
   console.log(`✓ ${label}`);
 }
-function fail(label: string, info?: unknown): never {
+function fail(label: string): never {
   console.log(`✗ ${label}`);
-  if (info !== undefined) console.log("  ", info);
   process.exit(1);
 }
 

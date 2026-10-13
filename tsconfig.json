@@ -25,5 +25,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  // Vendored lint plugin: upstream-owned, checked by its own repo.
+  "exclude": ["node_modules", "tools/oxlint/anti-slop"]
 }

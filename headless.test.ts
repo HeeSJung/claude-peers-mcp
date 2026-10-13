@@ -14,6 +14,7 @@ import { spawn, type Subprocess } from "bun";
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ADDRESS_ENV, HEADLESS_ENV, readAddressEnv, readHeadlessEnv } from "./headless.ts";
+import type { BrokerRequest } from "./shared/types.ts";
 
 describe("readHeadlessEnv", () => {
   test("unset env is not headless", () => {
@@ -102,7 +103,7 @@ async function waitUp(b: FakeBroker) {
   throw new Error(`broker ${b.machine} did not come up`);
 }
 
-async function post<T>(b: FakeBroker, path: string, body: unknown): Promise<T> {
+async function post<T>(b: FakeBroker, path: string, body: BrokerRequest): Promise<T> {
   const r = await fetch(`http://127.0.0.1:${b.localPort}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -112,6 +112,18 @@ export interface PollMessagesRequest {
   id: PeerId;
 }
 
+/** Every body a client POSTs to a broker's local endpoints (`/unregister` takes `{ id }`). */
+export type BrokerRequest =
+  | RegisterRequest
+  | HeartbeatRequest
+  | SetSummaryRequest
+  | ListPeersRequest
+  | SendMessageRequest
+  | PollMessagesRequest;
+
+/** Every body one broker POSTs to a peer broker. */
+export type PeerBrokerRequest = PeerEventRequest | ForwardRequest;
+
 export interface PollMessagesResponse {
   messages: Message[];
 }

@@ -9,10 +9,13 @@
   "scripts": {
     "broker": "bun broker.ts",
     "server": "bun server.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "lint": "oxlint"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@oxlint/plugins": "1.87.0",
+    "@types/bun": "latest",
+    "oxlint": "1.87.0"
   },
   "peerDependencies": {
     "typescript": "^5"

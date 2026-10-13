@@ -20,6 +20,7 @@ import {
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import type {
+  BrokerRequest,
   PeerId,
   Peer,
   RegisterResponse,
@@ -52,7 +53,7 @@ const BROKER_SCRIPT = new URL("./broker.ts", import.meta.url).pathname;
 
 // --- Broker communication ---
 
-async function brokerFetch<T>(path: string, body: unknown): Promise<T> {
+async function brokerFetch<T>(path: string, body: BrokerRequest): Promise<T> {
   const res = await fetch(`${BROKER_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -261,7 +262,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           scope,
           cwd: myCwd,
           git_root: myGitRoot,
-          exclude_id: myId,
+          exclude_id: myId ?? undefined,
         });
 
         if (peers.length === 0) {

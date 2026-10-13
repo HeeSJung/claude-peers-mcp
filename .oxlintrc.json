@@ -1,0 +1,27 @@
+// anti-slop, type-safety + testing subset (vendored at tools/oxlint/anti-slop).
+// ON:  no-chained-type-assertions, no-known-value-widening, no-unknown-parameters,
+//      no-unknown-returns, no-conditional-empty-object-spread, no-module-mocking,
+//      no-unsafe-dictionary-type, no-unknown-type-aliases, no-widen-then-assert,
+//      no-reflect-get, no-reflect-apply.
+// OFF: require-readable-spacing (spacing style), require-safety-comment-for-type-assertion
+//      (60 findings), no-runtime-typeof (bans the typeof guards hand validators use),
+//      no-object-parameters, no-shape-in-symbol-names (naming style), no-array-filter-map,
+//      no-reduce-accumulator-copy + oxc/no-accumulating-spread (performance, not types),
+//      and the Effect plugin (no `effect` dependency).
+{
+  "ignorePatterns": [".claude/**", ".codex/**", ".agents/**", "tools/oxlint/anti-slop/**"],
+  "jsPlugins": [{ "name": "anti-slop", "specifier": "./tools/oxlint/anti-slop/index.ts" }],
+  "rules": {
+    "anti-slop/no-chained-type-assertions": "error",
+    "anti-slop/no-known-value-widening": "error",
+    "anti-slop/no-unknown-parameters": "error",
+    "anti-slop/no-unknown-returns": "error",
+    "anti-slop/no-conditional-empty-object-spread": "error",
+    "anti-slop/no-module-mocking": "error",
+    "anti-slop/no-unsafe-dictionary-type": "error",
+    "anti-slop/no-unknown-type-aliases": "error",
+    "anti-slop/no-widen-then-assert": "error",
+    "anti-slop/no-reflect-get": "error",
+    "anti-slop/no-reflect-apply": "error"
+  }
+}

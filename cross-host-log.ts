@@ -94,6 +94,7 @@ export function createRotatingLog(opts: RotatingLogOptions): (line: string) => P
       const archive = archiveName(opts.path, now().toISOString().slice(0, 10));
       await rename(opts.path, archive);
       await appendFile(opts.path, text, "utf8");
+      // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a rejection reason is untyped in JS
       const warn = (what: string) => (e: unknown) =>
         console.error(`[cross-host-log] ${what} failed:`, e instanceof Error ? e.message : e);
       await gzipAndRemove(archive).catch(warn("archive cleanup"));

@@ -10,6 +10,7 @@ import {
   deliverSessionMessage,
   loadDaemonSecret,
 } from "./session-address.ts";
+import type { BrokerRequest, Peer, RegisterRequest } from "./shared/types.ts";
 
 /**
  * What the broker forwards to the daemon and what it leaves to the peer
@@ -175,7 +176,7 @@ describe("broker /send-message: session branch ahead of the peer lookup", () => 
   const sleepers: Subprocess[] = [];
   let peerId = "";
 
-  async function register(extra: Record<string, unknown> = {}): Promise<string> {
+  async function register(extra: Partial<RegisterRequest> = {}): Promise<string> {
     const sleeper = spawn({ cmd: ["sleep", "60"] });
     sleepers.push(sleeper);
     const body = { pid: sleeper.pid, cwd: ROOT, git_root: null, tty: null, summary: "", ...extra };
@@ -188,7 +189,7 @@ describe("broker /send-message: session branch ahead of the peer lookup", () => 
     return polled.messages.map((m) => m.from_id);
   }
 
-  async function post<T>(path: string, body: unknown): Promise<T> {
+  async function post<T>(path: string, body: BrokerRequest): Promise<T> {
     const r = await fetch(`http://127.0.0.1:${PORT}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -376,7 +377,7 @@ describe("broker /send-message: session branch ahead of the peer lookup", () => 
 
   test("/list-peers carries no address, so a stamped turn never looks like a seat", async () => {
     const turn = await register({ headless: true, address: "side:sori-side1" });
-    const rows = await post<Record<string, unknown>[]>("/list-peers", { scope: "machine", cwd: ROOT, git_root: null });
+    const rows = await post<Peer[]>("/list-peers", { scope: "machine", cwd: ROOT, git_root: null });
     const row = rows.find((r) => r.id === turn);
     expect(row?.headless).toBe(true);
     expect(row && "address" in row).toBe(false);

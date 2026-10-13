@@ -31,6 +31,7 @@ import {
   startCodexTurn,
   type CodexSocketFactory,
   type CodexThreadMeta,
+  type RpcResult,
   type PeerMessageView,
   type Seat,
 } from "./codex-seat.ts";
@@ -81,7 +82,7 @@ function fakeCodexServer(
         sent.push({ method: msg.method, params: msg.params });
         if (opts.mute) return;
         queueMicrotask(() => {
-          const reply = (result: unknown) =>
+          const reply = (result: RpcResult) =>
             handlers.onMessage(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }));
           if (msg.method === "thread/loaded/list") return reply({ data: threads.map((t) => t.id) });
           if (msg.method === "thread/read")
@@ -368,7 +369,7 @@ describe("startCodexTurn — the four frames, in order", () => {
           const msg = JSON.parse(data) as { id: number; method: string; params: any };
           sent.push({ method: msg.method, params: msg.params });
           queueMicrotask(() => {
-            const reply = (result: unknown) =>
+            const reply = (result: RpcResult) =>
               handlers.onMessage(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }));
             if (msg.method === "thread/loaded/list") return reply({ data: [LIVE_TUI.id] });
             // BARE — no `thread` wrapper.

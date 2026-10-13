@@ -171,6 +171,7 @@ export interface CodexSocket {
 export interface CodexSocketHandlers {
   onOpen: () => void;
   onMessage: (data: string) => void;
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a transport error is untyped across transports
   onError: (err: unknown) => void;
   onClose: () => void;
 }
@@ -181,7 +182,7 @@ export const defaultCodexSocketFactory: CodexSocketFactory = (url, handlers) => 
   const ws = new WebSocket(url);
   ws.onopen = () => handlers.onOpen();
   ws.onmessage = (ev: MessageEvent) => handlers.onMessage(String(ev.data));
-  ws.onerror = (err: unknown) => handlers.onError(err);
+  ws.onerror = (ev: Event) => handlers.onError(ev);
   ws.onclose = () => handlers.onClose();
   return { send: (data) => ws.send(data), close: () => ws.close() };
 };
@@ -232,10 +233,34 @@ export function selectSeatThread(
   return usable.reduce((best, t) => (recency(t) > recency(best) ? t : best)).id;
 }
 
+/** `thread/read` answers `{ thread }` (0.153.4) or the bare row (other builds). */
+type ThreadReadResult = { thread?: Partial<CodexThreadMeta> } | Partial<CodexThreadMeta>;
+
+/** The JSON-RPC methods this client calls: what each sends, and what it reads back. */
+interface RpcMethods {
+  initialize: {
+    params: { clientInfo: { name: string; title: string; version: string }; capabilities: null };
+    result: object; // not read
+  };
+  "thread/loaded/list": { params: Record<string, never>; result: { data?: string[] } };
+  "thread/read": { params: { threadId: string; includeTurns: boolean }; result: ThreadReadResult };
+  "turn/start": {
+    params: { threadId: string; input: { type: "text"; text: string }[] };
+    result: object; // not read
+  };
+}
+
+/** Any result this client can receive; the tests' fake app-server answers with these. */
+export type RpcResult = RpcMethods[keyof RpcMethods]["result"];
+
 interface RpcResponse {
   id?: number | string;
-  result?: unknown;
+  result?: RpcResult;
   error?: { message?: string };
+}
+
+function isWrappedThread(read: ThreadReadResult): read is { thread?: Partial<CodexThreadMeta> } {
+  return "thread" in read;
 }
 
 /**
@@ -256,7 +281,11 @@ export async function startCodexTurn(
   const timeoutMs = options.timeoutMs ?? CODEX_WS_TIMEOUT_MS;
 
   let nextId = 0;
-  const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
+  const pending = new Map<
+    number,
+    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a rejection reason is untyped in JS
+    { resolve: (result: RpcResult | undefined) => void; reject: (err: unknown) => void }
+  >();
   let socket: CodexSocket | undefined;
   let settled = false;
 
@@ -272,6 +301,7 @@ export async function startCodexTurn(
       }
       fn();
     };
+    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- receives thrown values and socket errors
     const fail = (err: unknown) =>
       finish(() => {
         for (const [, waiter] of pending) waiter.reject(err);
@@ -284,10 +314,12 @@ export async function startCodexTurn(
       timeoutMs,
     );
 
-    const call = (method: string, params: unknown) =>
-      new Promise<unknown>((res, rej) => {
+    const call = <M extends keyof RpcMethods>(method: M, params: RpcMethods[M]["params"]) =>
+      new Promise<RpcMethods[M]["result"] | undefined>((res, rej) => {
         const id = ++nextId;
-        pending.set(id, { resolve: res, reject: rej });
+        // SAFETY: JSON-RPC pairs a reply to its request by id, so the reply to
+        // this id is this method's result; the wire shape is the app-server's word.
+        pending.set(id, { resolve: (result) => res(result as RpcMethods[M]["result"] | undefined), reject: rej });
         try {
           socket!.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
         } catch (err) {
@@ -301,24 +333,19 @@ export async function startCodexTurn(
         clientInfo: { name: "crew-peers", title: "crew-peers", version: "1" },
         capabilities: null,
       });
-      const loaded = (await call("thread/loaded/list", {})) as { data?: string[] } | undefined;
+      const loaded = await call("thread/loaded/list", {});
       const ids = loaded?.data ?? [];
       if (ids.length === 0) {
         throw new Error(`codex app-server at ${url} has no loaded thread (is the TUI up?)`);
       }
       const metas: CodexThreadMeta[] = [];
       for (const id of ids) {
-        const read = (await call("thread/read", { threadId: id, includeTurns: false })) as
-          | { thread?: Partial<CodexThreadMeta> }
-          | Partial<CodexThreadMeta>
-          | undefined;
+        const read = await call("thread/read", { threadId: id, includeTurns: false });
         // BOTH shapes, identically to the twin: 0.153.4 answers
         // `{ thread: Thread }`, and a build that answers the row bare must not
         // read as "no metadata" — which would strip every discriminating field
         // and take the seat off the air rather than degrade.
-        const meta = ((read as { thread?: Partial<CodexThreadMeta> })?.thread ??
-          read ??
-          {}) as Partial<CodexThreadMeta>;
+        const meta = (read && isWrappedThread(read) ? read.thread : undefined) ?? read ?? {};
         metas.push({ ...meta, id });
       }
       const chosen = selectSeatThread(metas, options.home);

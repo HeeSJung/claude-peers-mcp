@@ -68,8 +68,8 @@ export async function deliverSessionMessage(
 ): Promise<{ ok: boolean; error?: string }> {
   const baseUrl = opts?.baseUrl ?? process.env.CLAUDE_PEERS_TICKET_INBOX_URL ?? DEFAULT_INBOX_BASE_URL;
   const secret = opts && "secret" in opts ? opts.secret : await loadDaemonSecret();
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  if (secret) headers["x-solios-secret"] = secret;
+  const headers = new Headers({ "content-type": "application/json" });
+  if (secret) headers.set("x-solios-secret", secret);
 
   let res: Response;
   try {

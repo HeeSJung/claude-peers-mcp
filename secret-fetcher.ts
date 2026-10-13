@@ -1,14 +1,14 @@
 /**
  * Cross-broker secret fetcher.
  *
- * Each broker writes its own 32-byte secret to ~/.claude-peers/secret-current
+ * Each broker writes its own 32-byte secret to ~/.crew-peers/secret-current
  * (mode 600). Peer brokers fetch each other's secrets via a forced-command
  * SSH key path:
  *
  *   ssh <ssh_alias>           # → prints 64 hex chars to stdout, exits 0
  *
  * The SSH key on the receiving side has a forced-command:
- *   command="cat ~/.claude-peers/secret-current"
+ *   command="cat ~/.crew-peers/secret-current"
  *
  * Cached in memory; re-fetched on HMAC verify failure.
  */

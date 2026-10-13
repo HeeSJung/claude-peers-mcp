@@ -10,6 +10,8 @@
  */
 
 import { Database } from "bun:sqlite";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import type {
   RegisterRequest,
   RegisterResponse,
@@ -48,7 +50,7 @@ import { normalizeAddress } from "./headless.ts";
 
 const PORT_LOCAL = parseInt(process.env.CLAUDE_PEERS_PORT ?? "7899", 10);
 const PORT_PEER = parseInt(process.env.CLAUDE_PEERS_PEER_PORT ?? "7900", 10);
-const DB_PATH = process.env.CLAUDE_PEERS_DB ?? `${process.env.HOME}/.claude-peers.db`;
+const DB_PATH = process.env.CLAUDE_PEERS_DB ?? `${process.env.HOME}/.crew-peers/broker.db`;
 const HEALTH_INTERVAL_MS = 30_000;
 const STALE_AFTER_FAILS = 3; // mark stale after 3 consecutive /health failures
 const DOWN_AFTER_MS = 5 * 60 * 1000; // prune remote_peers after 5min stale
@@ -56,6 +58,8 @@ const HEARTBEAT_FANOUT_MIN_INTERVAL_MS = 10_000; // throttle heartbeat fanout
 
 // --- Database setup ---
 
+// The db lives inside the state dir, which a fresh machine may not have yet.
+mkdirSync(dirname(DB_PATH), { recursive: true });
 const db = new Database(DB_PATH);
 db.run("PRAGMA journal_mode = WAL");
 db.run("PRAGMA busy_timeout = 3000");

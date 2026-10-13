@@ -1,5 +1,5 @@
 /**
- * Loader for `~/.claude-peers/brokers.json` and `~/.claude-peers/secret-current`.
+ * Loader for `~/.crew-peers/brokers.json` and `~/.crew-peers/secret-current`.
  *
  * Schema (brokers.json):
  *   {
@@ -25,7 +25,7 @@ import { readFileSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const HOME = process.env.HOME ?? "/tmp";
-export const CONFIG_DIR = process.env.CLAUDE_PEERS_CONFIG_DIR ?? join(HOME, ".claude-peers");
+export const CONFIG_DIR = process.env.CLAUDE_PEERS_CONFIG_DIR ?? join(HOME, ".crew-peers");
 export const BROKERS_JSON = join(CONFIG_DIR, "brokers.json");
 export const SECRET_CURRENT = join(CONFIG_DIR, "secret-current");
 

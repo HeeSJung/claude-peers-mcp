@@ -14,11 +14,11 @@ WorkingDirectory=%h/apps/crew-peers
 ExecStart=%h/.bun/bin/bun broker.ts
 Restart=on-failure
 RestartSec=3
-# Log lives in the state dir (%h/.claude-peers/, alongside brokers.json and
+# Log lives in the state dir (%h/.crew-peers/, alongside brokers.json and
 # cross-host.log) rather than in the repo folder, so runtime output can never
 # show up as untracked noise in `git status`.
-StandardOutput=append:%h/.claude-peers/broker.log
-StandardError=append:%h/.claude-peers/broker.log
+StandardOutput=append:%h/.crew-peers/broker.log
+StandardError=append:%h/.crew-peers/broker.log
 MemoryHigh=128M
 MemoryMax=256M
 

@@ -1,7 +1,7 @@
 /**
  * Cross-host audit log + simple per-peer rate limiter.
  *
- * Append-only at ~/.claude-peers/cross-host.log. Format:
+ * Append-only at ~/.crew-peers/cross-host.log. Format:
  *   <iso-ts> <DIRECTION-EVENT> <peer-machine> <details...> <result>
  *
  * Examples:

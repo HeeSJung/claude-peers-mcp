@@ -111,8 +111,8 @@ bun cli.ts kill-broker       # stop the broker
 | --------------------------------------- | ------------------------ | -------------------------------------------------------------------- |
 | `CLAUDE_PEERS_PORT`                     | `7899`                   | Broker local-listener port (loopback, unauth)                        |
 | `CLAUDE_PEERS_PEER_PORT`                | `7900`                   | Broker cross-host listener port (Tailscale-bound, HMAC-required)      |
-| `CLAUDE_PEERS_DB`                       | `~/.claude-peers.db`     | SQLite database path                                                  |
-| `CLAUDE_PEERS_CONFIG_DIR`               | `~/.claude-peers/`       | Where `brokers.json` and `secret-current` live                        |
+| `CLAUDE_PEERS_DB`                       | `~/.crew-peers/broker.db`     | SQLite database path                                                  |
+| `CLAUDE_PEERS_CONFIG_DIR`               | `~/.crew-peers/`       | Where `brokers.json` and `secret-current` live                        |
 | `CLAUDE_PEERS_CROSS_HOST_LOG`           | `<config-dir>/cross-host.log` | Audit log for cross-broker requests                              |
 | `CLAUDE_PEERS_HEADLESS`                | unset                    | `1`/`true`/`yes` registers this MCP server's peer as headless (a one-shot turn, not a resident seat); `/list-peers` rows (local and remote) carry `headless` so seat-address resolvers can skip them |
 | `CLAUDE_PEERS_ADDRESS`                 | unset                    | The headless turn's durable address (`ticket:<repo>#<n>`, `side:<side id>`, or a live local peer id such as a remote crewmate's stand-in); the broker delivers this peer's messages with it as `from_id`. Ignored unless the peer is headless |
@@ -137,15 +137,15 @@ binds to the Tailscale IP only — never to `0.0.0.0` or any public NIC.
 1. **Generate a broker secret:**
 
    ```bash
-   mkdir -p ~/.claude-peers
-   openssl rand -hex 32 > ~/.claude-peers/secret-current
-   chmod 600 ~/.claude-peers/secret-current
+   mkdir -p ~/.crew-peers
+   openssl rand -hex 32 > ~/.crew-peers/secret-current
+   chmod 600 ~/.crew-peers/secret-current
    ```
 
 2. **Add a forced-command SSH key path** to `~/.ssh/authorized_keys`:
 
    ```
-   command="cat ~/.claude-peers/secret-current",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty <peer's pubkey>
+   command="cat ~/.crew-peers/secret-current",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty <peer's pubkey>
    ```
 
 3. **Add an SSH alias on the *other* machine** in `~/.ssh/config`:
@@ -158,7 +158,7 @@ binds to the Tailscale IP only — never to `0.0.0.0` or any public NIC.
        IdentitiesOnly yes
    ```
 
-4. **Edit `~/.claude-peers/brokers.json`:**
+4. **Edit `~/.crew-peers/brokers.json`:**
 
    ```json
    {

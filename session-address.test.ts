@@ -360,8 +360,14 @@ describe("broker /send-message: session branch ahead of the peer lookup", () => 
     expect(await fromIdsAt(peerId)).toEqual([turn]);
   });
 
-  test("a resident (non-headless) peer's address is ignored", async () => {
-    const seat = await register({ headless: false, address: "side:sori-side1" });
+  test("a resident (non-headless) peer's session address is stamped: an office Side Session", async () => {
+    const side = await register({ headless: false, address: "side:sori-side1" });
+    expect(await sendFrom(side, peerId)).toEqual({ ok: true });
+    expect(await fromIdsAt(peerId)).toEqual(["side:sori-side1"]);
+  });
+
+  test("a resident (non-headless) peer's stand-in address is ignored", async () => {
+    const seat = await register({ headless: false, address: peerId });
     expect(await sendFrom(seat, peerId)).toEqual({ ok: true });
     expect(await fromIdsAt(peerId)).toEqual([seat]);
   });
@@ -375,11 +381,11 @@ describe("broker /send-message: session branch ahead of the peer lookup", () => 
     },
   );
 
-  test("/list-peers carries no address, so a stamped turn never looks like a seat", async () => {
+  test("/list-peers carries the address, so a seat resolver can skip a side or ticket row", async () => {
     const turn = await register({ headless: true, address: "side:sori-side1" });
     const rows = await post<Peer[]>("/list-peers", { scope: "machine", cwd: ROOT, git_root: null });
     const row = rows.find((r) => r.id === turn);
     expect(row?.headless).toBe(true);
-    expect(row && "address" in row).toBe(false);
+    expect(row?.address).toBe("side:sori-side1");
   });
 });

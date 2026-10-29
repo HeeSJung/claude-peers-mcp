@@ -13,6 +13,9 @@ export interface Peer {
   // Registered from a headless one-shot turn (see headless.ts); seat-address
   // resolvers skip these rows.
   headless: boolean;
+  // The registered CLAUDE_PEERS_ADDRESS (a `side:`/`ticket:` session address or a
+  // stand-in peer id); absent = none. Local rows only: the remote view drops it.
+  address?: string;
 }
 
 export interface Message {

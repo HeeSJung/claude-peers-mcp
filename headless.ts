@@ -18,8 +18,9 @@ export function readHeadlessEnv(env: Record<string, string | undefined>): boolea
 /**
  * The turn's durable address: a session address (`ticket:<repo>#<n>`, `side:<side id>`) or a
  * remote crewmate's stand-in peer id. server.ts sends it on /register; the
- * broker stamps it as `from_id` on the peer's outbound messages, honoured only
- * for a headless peer (broker.ts `senderIdFor`).
+ * broker stamps it as `from_id` on the peer's outbound messages: a session
+ * address from any peer on the local route, a stand-in id only for a headless
+ * peer (broker.ts `senderIdFor`).
  */
 export const ADDRESS_ENV = "CLAUDE_PEERS_ADDRESS";
 

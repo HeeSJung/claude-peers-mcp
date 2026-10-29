@@ -146,12 +146,16 @@ try {
   // Column already exists: no-op.
 }
 
-// SQLite stores the flag as 0/1; the API speaks boolean. The address is a
-// routing fact on outbound messages, never a seat, so /list-peers omits it.
-type PeerRow = Omit<Peer, "headless"> & { headless: number; address: string | null };
+// SQLite stores the flag as 0/1; the API speaks boolean. A registered address
+// rides along on local /list-peers (absent when none) so a by-home seat resolver
+// can skip an office Side Session: an interactive peer in its parent's folder
+// that only its `side:` address tells apart (sooth-os/sooth#1594).
+type PeerRow = Omit<Peer, "headless" | "address"> & { headless: number; address: string | null };
 function toPeer(row: PeerRow): Peer {
-  const { address: _address, ...peer } = row;
-  return { ...peer, headless: row.headless === 1 };
+  const { address, ...rest } = row;
+  const peer: Peer = { ...rest, headless: row.headless === 1 };
+  if (address) peer.address = address;
+  return peer;
 }
 // Absent on the wire (old clients, older brokers) = false.
 function toHeadlessColumn(flag: boolean | undefined): number {
@@ -441,21 +445,26 @@ function handleListPeers(body: ListPeersRequest): Peer[] {
 }
 
 /**
- * The `from_id` a message from `peerId` carries on `route`. A headless peer's
- * registered address (CLAUDE_PEERS_ADDRESS) replaces its peer id when the
- * address is a live local peer id (a remote crewmate's stand-in), or, on the
- * local route only, a session address: the daemon inbox is on this box, so
- * another machine could not answer `side:x@<machine>`. Anything else sends as
- * the peer id. Judged per send, so a stand-in that has gone falls back.
- * Trust boundary: the local port is loopback-only, so any local headless peer
- * may name any live local peer id as its address; that is accepted.
+ * The `from_id` a message from `peerId` carries on `route`. A registered
+ * address (CLAUDE_PEERS_ADDRESS) replaces the peer id in two cases:
+ * - on the local route only, a session address (`side:`, `ticket:`), headless
+ *   or not: an office Side Session is an interactive peer in its parent's
+ *   folder, and its raw id would read as the parent (sooth-os/sooth#1594). The
+ *   daemon inbox is on this box, so another machine could not answer
+ *   `side:x@<machine>`;
+ * - for a headless peer only, a live local peer id (a remote crewmate's
+ *   stand-in). Judged per send, so a stand-in that has gone falls back.
+ * Anything else sends as the peer id.
+ * Trust boundary: the local port is loopback-only, so any local peer may claim
+ * any `side:`/`ticket:` sender address, and any local headless peer may name
+ * any live local peer id as its address; both are accepted.
  */
 function senderIdFor(peerId: string, route: "local" | "cross-host"): string {
   const row = selectPeerById.get(peerId) as PeerRow | undefined;
   const address = row?.address;
-  if (!row || row.headless !== 1 || !address) return peerId;
+  if (!row || !address) return peerId;
   if (route === "local" && parseSessionAddress(address)) return address;
-  if (selectPeerById.get(address)) return address;
+  if (row.headless === 1 && selectPeerById.get(address)) return address;
   return peerId;
 }
 

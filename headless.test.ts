@@ -113,7 +113,7 @@ async function post<T>(b: FakeBroker, path: string, body: BrokerRequest): Promis
   return (await r.json()) as T;
 }
 
-type Row = { id: string; headless: boolean };
+type Row = { id: string; headless: boolean; address?: string };
 
 // /list-peers drops local rows whose pid is dead, so each peer needs a live pid.
 const sleepers: Subprocess[] = [];
@@ -125,6 +125,8 @@ const ids = {
   standIn: "",
   standInTurn: "",
   onB: "",
+  officeSide: "",
+  officeNamer: "",
 };
 
 beforeAll(async () => {
@@ -137,7 +139,7 @@ beforeAll(async () => {
   await waitUp(B);
   await Bun.sleep(500);
 
-  for (let i = 0; i < 7; i++) sleepers.push(spawn({ cmd: ["sleep", "60"] }));
+  for (let i = 0; i < 9; i++) sleepers.push(spawn({ cmd: ["sleep", "60"] }));
   const base = { git_root: null, tty: null, summary: "" };
   ids.flagged = (
     await post<{ id: string }>(A, "/register", { ...base, pid: sleepers[0]!.pid, cwd: "/home/x", headless: true })
@@ -169,6 +171,27 @@ beforeAll(async () => {
     })
   ).id;
   ids.onB = (await post<{ id: string }>(B, "/register", { ...base, pid: sleepers[4]!.pid, cwd: "/home/y" })).id;
+  // An office Side Session: interactive (not headless) in its parent's folder,
+  // told apart from the seat only by its `side:` address (sooth-os/sooth#1594).
+  ids.officeSide = (
+    await post<{ id: string }>(A, "/register", {
+      ...base,
+      pid: sleepers[7]!.pid,
+      cwd: "/home/x",
+      headless: false,
+      address: "side:x-side1",
+    })
+  ).id;
+  // An interactive peer naming a live peer id: never trusted as a stand-in.
+  ids.officeNamer = (
+    await post<{ id: string }>(A, "/register", {
+      ...base,
+      pid: sleepers[8]!.pid,
+      cwd: "/home/x",
+      headless: false,
+      address: ids.standIn,
+    })
+  ).id;
   await Bun.sleep(800); // let the register fanout reach the other broker
 }, 20_000);
 
@@ -239,5 +262,40 @@ describe("registered address across hosts", () => {
   test("the remote view stays a headless row under the peer id", async () => {
     const rows = await post<Row[]>(B, "/list-peers", { scope: "machine+remote", cwd: "/", git_root: null });
     expect(flagOf(rows, `${ids.addressed}@${A.machine}`)).toBe(true);
+  });
+});
+
+describe("an office Side Session (interactive, side: address)", () => {
+  test("local /list-peers carries the registered address, and none on a row without one", async () => {
+    const rows = await post<Row[]>(A, "/list-peers", { scope: "directory", cwd: "/home/x", git_root: null });
+    const side = rows.find((r) => r.id === ids.officeSide);
+    expect(side?.headless).toBe(false);
+    expect(side?.address).toBe("side:x-side1");
+    const plain = rows.find((r) => r.id === ids.unflagged);
+    expect(plain).toBeDefined();
+    expect(plain).not.toHaveProperty("address");
+  });
+
+  test("the remote view carries no address", async () => {
+    const rows = await post<Row[]>(B, "/list-peers", { scope: "machine+remote", cwd: "/", git_root: null });
+    const remote = rows.find((r) => r.id === `${ids.officeSide}@${A.machine}`);
+    expect(remote).toBeDefined();
+    expect(remote).not.toHaveProperty("address");
+  });
+
+  test("a local send is stamped with the side address", async () => {
+    expect(
+      await post<{ ok: boolean }>(A, "/send-message", { from_id: ids.officeSide, to_id: ids.unflagged, text: "hi" }),
+    ).toEqual({ ok: true });
+    const polled = await post<{ messages: { from_id: string }[] }>(A, "/poll-messages", { id: ids.unflagged });
+    expect(polled.messages.map((m) => m.from_id)).toEqual(["side:x-side1"]);
+  });
+
+  test("an interactive peer naming a live peer id still sends as itself", async () => {
+    expect(
+      await post<{ ok: boolean }>(A, "/send-message", { from_id: ids.officeNamer, to_id: ids.unflagged, text: "hi" }),
+    ).toEqual({ ok: true });
+    const polled = await post<{ messages: { from_id: string }[] }>(A, "/poll-messages", { id: ids.unflagged });
+    expect(polled.messages.map((m) => m.from_id)).toEqual([ids.officeNamer]);
   });
 });

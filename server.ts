@@ -41,6 +41,7 @@ import {
 } from "./codex-seat.ts";
 import { parseVscodeReplyAddress, deliverVscodeReply } from "./vscode-reply.ts";
 import { readAddressEnv, readHeadlessEnv } from "./headless.ts";
+import { formatPeer } from "./peer-format.ts";
 
 // --- Configuration ---
 
@@ -276,18 +277,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
           };
         }
 
-        const lines = peers.map((p) => {
-          const parts = [
-            `ID: ${p.id}`,
-            `PID: ${p.pid}`,
-            `CWD: ${p.cwd}`,
-          ];
-          if (p.git_root) parts.push(`Repo: ${p.git_root}`);
-          if (p.tty) parts.push(`TTY: ${p.tty}`);
-          if (p.summary) parts.push(`Summary: ${p.summary}`);
-          parts.push(`Last seen: ${p.last_seen}`);
-          return parts.join("\n  ");
-        });
+        const lines = peers.map(formatPeer);
 
         return {
           content: [

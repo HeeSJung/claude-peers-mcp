@@ -5,7 +5,7 @@
 
 import type { Peer } from "./shared/types.ts";
 
-export const HEADLESS_LINE = "Headless: true (one-turn session, not the seat; reply to its from_id)";
+const HEADLESS_LINE = "Headless: true (one-turn session, not the seat; reply to its from_id)";
 
 export function formatPeer(p: Peer): string {
   const parts = [`ID: ${p.id}`, `PID: ${p.pid}`, `CWD: ${p.cwd}`];

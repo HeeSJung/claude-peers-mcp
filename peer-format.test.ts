@@ -1,6 +1,6 @@
 /**
  * list_peers row formatting (sooth-os/sooth#1542): a headless row carries one
- * extra Headless line; every other row prints exactly as before.
+ * extra Headless line; every other row prints ID through Last seen and nothing more.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -20,7 +20,7 @@ const seat: Peer = {
 };
 
 describe("formatPeer", () => {
-  test("a seat row prints the fields it always printed, and no Headless line", () => {
+  test("a seat row prints ID through Last seen, and no Headless line", () => {
     expect(formatPeer(seat)).toBe(
       [
         "ID: abc12345",

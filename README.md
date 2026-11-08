@@ -193,6 +193,15 @@ send_message to_id "<id>@milo-mac" message "..."
    → forwarded over Tailscale; recipient sees same channel push as local
 ```
 
+### Address a crewmate by seat name
+
+`send_message to_id "haru"` reaches the session seated in haru's home
+(`~/sooth/haru`, or the roster's `home`), falling back to its listener stand-in.
+The broker resolves the name on every send through
+`~/sooth/shared/scripts/crew-send-peers.sh --resolve`, so a seat restart never
+breaks a sender. Exact peer ids always win over a name. After deploying a broker
+change, restart the user unit: `systemctl --user restart crew-peers-broker`.
+
 If `brokers.json` is absent, the broker runs in single-broker mode (v1
 behavior — local loopback only). Cross-host is opt-in.
 

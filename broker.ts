@@ -46,6 +46,7 @@ import { SshSecretFetcher } from "./secret-fetcher.ts";
 import { logCrossHost, checkRate } from "./cross-host-log.ts";
 import { createTargetFilter } from "./fanout-targets.ts";
 import { parseVscodeReplyAddress, deliverVscodeReply } from "./vscode-reply.ts";
+import { resolveSeatName } from "./seat-name.ts";
 import { parseSessionAddress, deliverSessionMessage } from "./session-address.ts";
 import { normalizeAddress } from "./headless.ts";
 
@@ -522,6 +523,20 @@ async function handleSendMessage(
       text: body.text,
       sent_at: new Date().toISOString(),
     });
+  }
+
+  // A bare seat name ("haru") is the session seated in that crewmate's home,
+  // looked up on every send so a restarted seat's new id is never stale.
+  const seat = await resolveSeatName(
+    body.to_id,
+    handleListPeers({ scope: "machine", cwd: "", git_root: null }),
+  );
+  if (seat.kind === "seat" && selectPeerById.get(seat.id)) {
+    insertMessage.run(senderIdFor(body.from_id, "local"), seat.id, body.text, new Date().toISOString());
+    return { ok: true };
+  }
+  if (seat.kind !== "unknown") {
+    return { ok: false, error: `Peer ${body.to_id} not found: no live session or stand-in at ${seat.home}` };
   }
   return { ok: false, error: `Peer ${body.to_id} not found` };
 }

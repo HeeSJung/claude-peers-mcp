@@ -168,7 +168,7 @@ Read the from_id, from_summary, and from_cwd attributes to understand who sent t
 
 Available tools:
 - list_peers: Discover other Claude Code instances (scope: machine/directory/repo/machine+remote). "machine+remote" includes peers on other crew-peers brokers reached over Tailscale; their IDs are suffixed @<machine>.
-- send_message: Send a message to another instance by ID. Use the bare ID for local peers (e.g. "ec39idnw") or the @<machine> form for remote peers (e.g. "7sk2ab12@milo-mac"). Cross-host messages are forwarded HTTPS over Tailscale; recipient sees the same channel push as a local peer.
+- send_message: Send a message to another instance by ID. Use the bare ID for local peers (e.g. "ec39idnw"), a crewmate seat name for a crewmate on this machine (e.g. "haru") or the @<machine> form for remote peers (e.g. "7sk2ab12@milo-mac"). Cross-host messages are forwarded HTTPS over Tailscale; recipient sees the same channel push as a local peer.
 - set_summary: Set a 1-2 sentence summary of what you're working on (visible to other peers, including remote ones)
 - check_messages: Manually check for new messages
 
@@ -199,14 +199,14 @@ const TOOLS = [
   {
     name: "send_message",
     description:
-      "Send a message to another Claude Code instance by peer ID. The message will be pushed into their session immediately via channel notification. A from_id of the form vscode@mac:<qid> is a VS Code question; send_message to it puts the reply into that question's chat. A to_id of the form ticket:<repo-name>#<issue> (e.g. ticket:sooth#1140) is an issue's ticket-session, and side:<side id> (e.g. side:sori-side1) is an open Side Session; the message becomes a new turn there, and a closed or unknown session returns an error. A from_id of either form is that headless session's address on this machine: reply to it as given from here; it is never reachable from another machine.",
+      "Send a message to another Claude Code instance by peer ID. The message will be pushed into their session immediately via channel notification. A from_id of the form vscode@mac:<qid> is a VS Code question; send_message to it puts the reply into that question's chat. A to_id of the form ticket:<repo-name>#<issue> (e.g. ticket:sooth#1140) is an issue's ticket-session, and side:<side id> (e.g. side:sori-side1) is an open Side Session; the message becomes a new turn there, and a closed or unknown session returns an error. A bare crewmate seat name (e.g. "haru", "sori") reaches the session seated in that crewmate's home, whatever its current peer id. A from_id of either form is that headless session's address on this machine: reply to it as given from here; it is never reachable from another machine.",
     inputSchema: {
       type: "object" as const,
       properties: {
         to_id: {
           type: "string" as const,
           description:
-            'The peer ID of the target Claude Code instance (from list_peers). Local peers use the bare ID (e.g. "ec39idnw"). Remote peers use the "<id>@<machine>" form (e.g. "7sk2ab12@milo-mac") — those messages are forwarded over Tailscale to the destination broker.',
+            'The peer ID of the target Claude Code instance (from list_peers). Local peers use the bare ID (e.g. "ec39idnw") or a crewmate seat name (e.g. "haru"). Remote peers use the "<id>@<machine>" form (e.g. "7sk2ab12@milo-mac") — those messages are forwarded over Tailscale to the destination broker.',
         },
         message: {
           type: "string" as const,

@@ -182,6 +182,7 @@ describe("seatRuntime — read per poll, through crew-runtime.sh", () => {
   let dir: string;
   let record: string;
   const saved = process.env.CREW_RUNTIME_FILE;
+  const savedRoster = process.env.CREWMATE_REGISTRY;
 
   const write = (lines: Array<[string, string]>) =>
     writeFileSync(
@@ -189,43 +190,70 @@ describe("seatRuntime — read per poll, through crew-runtime.sh", () => {
       lines.map(([id, rt]) => `${id}\t${rt}\t${Math.floor(Date.now() / 1000)}`).join("\n") + "\n",
     );
 
+  // A fixture roster, so these cases pin the resolver's rules and not whichever seats
+  // the live roster holds today. `plain` has no pin, `pinned` pins codex, `stray` pins a
+  // runtime outside the claude|codex value space.
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), "crew-peers-runtime-"));
     record = join(dir, "crew-runtime.tsv");
     process.env.CREW_RUNTIME_FILE = record;
+    const roster = join(dir, "crew-roster.json");
+    writeFileSync(
+      roster,
+      JSON.stringify([
+        { id: "plain", session: "plain", scope: "plain" },
+        { id: "pinned", session: "pinned", scope: "pinned", runtime: "codex" },
+        { id: "stray", session: "stray", scope: "stray", runtime: "agy" },
+      ]),
+    );
+    process.env.CREWMATE_REGISTRY = roster;
   });
   afterAll(() => {
     if (saved === undefined) delete process.env.CREW_RUNTIME_FILE;
     else process.env.CREW_RUNTIME_FILE = saved;
+    if (savedRoster === undefined) delete process.env.CREWMATE_REGISTRY;
+    else process.env.CREWMATE_REGISTRY = savedRoster;
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test("an unrecorded seat answers claude — the pre-switch world", () => {
+  test("an unrecorded, unpinned seat answers claude — the pre-switch world", () => {
     write([]);
-    expect(seatRuntime("atlas")).toBe("claude");
+    expect(seatRuntime("plain")).toBe("claude");
   });
 
   // THE property: this process outlives a switch-ai, so a held answer is a seat
   // that goes deaf. Same process, same module, only the record changed.
   test("flipping the record flips the answer, with no restart", () => {
-    write([["atlas", "codex"]]);
-    expect(seatRuntime("atlas")).toBe("codex");
-    write([["atlas", "claude"]]);
-    expect(seatRuntime("atlas")).toBe("claude");
-    write([["atlas", "codex"]]);
-    expect(seatRuntime("atlas")).toBe("codex");
+    write([["plain", "codex"]]);
+    expect(seatRuntime("plain")).toBe("codex");
+    write([["plain", "claude"]]);
+    expect(seatRuntime("plain")).toBe("claude");
+    write([["plain", "codex"]]);
+    expect(seatRuntime("plain")).toBe("codex");
   });
 
-  test("haru's roster pin answers agy — and agy is not codex, so the push is unchanged", () => {
+  test("a roster pin answers when nothing is recorded, and the record overrides it", () => {
     write([]);
-    expect(seatRuntime("haru")).toBe("agy");
+    expect(seatRuntime("pinned")).toBe("codex");
+    write([["pinned", "claude"]]);
+    expect(seatRuntime("pinned")).toBe("claude");
+  });
+
+  test("a pin outside claude|codex falls to claude, so the push is unchanged", () => {
+    write([]);
+    expect(seatRuntime("stray")).toBe("claude");
+  });
+
+  test("a seat the roster does not hold answers undefined, which the caller reads as NOT codex", () => {
+    write([]);
+    expect(seatRuntime("ghost")).toBeUndefined();
   });
 
   test("an unreachable resolver answers undefined, which the caller reads as NOT codex", () => {
     const prev = process.env.CREW_RUNTIME_SH;
     process.env.CREW_RUNTIME_SH = join(dir, "does-not-exist.sh");
     try {
-      expect(seatRuntime("atlas")).toBeUndefined();
+      expect(seatRuntime("plain")).toBeUndefined();
     } finally {
       if (prev === undefined) delete process.env.CREW_RUNTIME_SH;
       else process.env.CREW_RUNTIME_SH = prev;

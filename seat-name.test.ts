@@ -11,7 +11,7 @@ import type { BrokerRequest, RegisterRequest } from "./shared/types.ts";
  * CLAUDE_PEERS_SEAT_RESOLVER points the broker at an unmerged copy of the script.
  */
 const RESOLVER =
-  process.env.CLAUDE_PEERS_SEAT_RESOLVER ?? "/home/heesoo/sooth/shared/scripts/crew-send-peers.sh";
+  process.env.CLAUDE_PEERS_SEAT_RESOLVER ?? "/home/heesoo/sooth/shared/scripts/crew-peers/crew-send-peers.sh";
 
 describe("isSeatNameShaped", () => {
   test.each(["haru", "dad-invst", "spk-coach", "sori"])("accepts %p", (n) => {

@@ -8,7 +8,7 @@
 
 // Absolute and VPS-only on purpose: the qid is minted on the VPS and only VPS
 // sessions receive VS Code questions, so this route never runs on the Mac.
-const CREW_REPLY_VSCODE_SCRIPT = "/home/heesoo/sooth/shared/scripts/crew-reply-vscode.sh";
+const CREW_REPLY_VSCODE_SCRIPT = "/home/heesoo/sooth/shared/scripts/crew-peers/crew-reply-vscode.sh";
 
 // crew-ask-peers.sh mints qids as `q<epoch>-<pid>-<random>`, digits only.
 const VSCODE_REPLY_ADDRESS = /^vscode@mac:(q[0-9]+-[0-9]+-[0-9]+)$/;

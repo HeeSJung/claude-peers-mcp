@@ -198,7 +198,7 @@ send_message to_id "<id>@milo-mac" message "..."
 `send_message to_id "haru"` reaches the session seated in haru's home
 (`~/sooth/haru`, or the roster's `home`), falling back to its listener stand-in.
 The broker resolves the name on every send through
-`~/sooth/shared/scripts/crew-send-peers.sh --resolve`, so a seat restart never
+`~/sooth/shared/scripts/crew-peers/crew-send-peers.sh --resolve`, so a seat restart never
 breaks a sender. Exact peer ids always win over a name. After deploying a broker
 change, restart the user unit: `systemctl --user restart crew-peers-broker`.
 

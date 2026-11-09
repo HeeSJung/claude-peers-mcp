@@ -16,7 +16,7 @@ import type { Peer } from "./shared/types.ts";
 // homes live on this box. A broker without the script (the Mac) answers every
 // name with the ordinary "not found".
 const SEAT_RESOLVER_SCRIPT =
-  process.env.CLAUDE_PEERS_SEAT_RESOLVER ?? "/home/heesoo/sooth/shared/scripts/crew-send-peers.sh";
+  process.env.CLAUDE_PEERS_SEAT_RESOLVER ?? "/home/heesoo/sooth/shared/scripts/crew-peers/crew-send-peers.sh";
 
 // A roster id: lowercase kebab. Random peer ids also fit, but the exact-id
 // lookup runs first, so a live peer id never reaches this resolver.

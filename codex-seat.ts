@@ -26,7 +26,7 @@
  * built the road for: a `turn/start` over the seat's own `codex app-server`
  * WebSocket, into the thread its TUI is attached to. When that socket is down,
  * a tmux paste into the seat's pane — the same fallback the Solios twin uses,
- * and the same verb `~/sooth/shared/scripts/inject-prompt.sh` has always used.
+ * and the same verb `~/sooth/shared/scripts/cron/inject-prompt.sh` has always used.
  *
  * ── Resolved PER POLL ───────────────────────────────────────────────────────
  *

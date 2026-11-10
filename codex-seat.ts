@@ -50,11 +50,11 @@ function rosterPath(): string {
   return process.env.CREWMATE_REGISTRY?.trim() || join(SHARED, "data", "crew-roster.json");
 }
 function crewRuntimeScript(): string {
-  return process.env.CREW_RUNTIME_SH?.trim() || join(SHARED, "scripts", "crew-runtime.sh");
+  return process.env.CREW_RUNTIME_SH?.trim() || join(SHARED, "scripts", "seat", "crew-runtime.sh");
 }
 function crewCodexLaunchScript(): string {
   return (
-    process.env.CREW_CODEX_LAUNCH_SH?.trim() || join(SHARED, "scripts", "crew-codex-launch.sh")
+    process.env.CREW_CODEX_LAUNCH_SH?.trim() || join(SHARED, "scripts", "seat", "crew-codex-launch.sh")
   );
 }
 

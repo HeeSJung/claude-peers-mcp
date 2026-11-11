@@ -4,13 +4,13 @@
  * Schema (brokers.json):
  *   {
  *     "schema": 1,
- *     "self_machine": "silas-vps",
+ *     "self_machine": "oregon",
  *     "self_ts_addr": "100.64.0.5:7900",
  *     "peers": [
  *       {
- *         "machine":   "milo-mac",
+ *         "machine":   "mac",
  *         "ts_addr":   "100.64.0.7:7900",
- *         "ssh_alias": "milo-broker-secret"
+ *         "ssh_alias": "mac-broker-secret"
  *       }
  *     ]
  *   }
@@ -19,6 +19,10 @@
  * `tailscale ip --1` and `CLAUDE_PEERS_PEER_PORT` (default 7900) at runtime.
  *
  * `secret-current`: 64 hex chars (32 bytes) on a single line. Mode 600.
+ *
+ * brokers.json is built, not hand-written: `buildBrokersConfig` derives it from the
+ * host registry (shared `data/hosts.json`, ADR-0064), so no address is typed here.
+ * `bun cli.ts brokers-config <self>` prints it.
  */
 
 import { readFileSync, existsSync, statSync } from "node:fs";
@@ -40,6 +44,60 @@ export interface BrokersConfig {
   self_machine: string;
   self_ts_addr: string;
   peers: BrokerPeerEntry[];
+}
+
+/** One row of the host registry (shared `data/hosts.json`), the fields read here. */
+export interface HostRow {
+  id: string;
+  kind?: string;
+  ssh?: string;
+  tailnet?: string;
+  homeRoot?: string;
+  hostname?: string;
+}
+
+/**
+ * The hosts that run a crew-peers broker, by place name. The KR box is in the
+ * registry but runs none. A host listed here with no registry row is skipped.
+ */
+export const BROKER_HOSTS = ["oregon", "helsinki", "mac"] as const;
+
+export const DEFAULT_REGISTRY = "/home/heesoo/sooth/shared/data/hosts.json";
+
+/**
+ * brokers.json for the broker on `self`: every other broker host is a peer,
+ * reached at its tailnet address on the peer port, its secret fetched through
+ * the `<host>-broker-secret` ssh alias. Throws on a self that is not a broker
+ * host in the registry, or a broker host with no tailnet address.
+ */
+export function buildBrokersConfig(
+  registry: HostRow[],
+  self: string,
+  opts: { port?: number; brokerHosts?: readonly string[] } = {},
+): BrokersConfig {
+  const port = opts.port ?? 7900;
+  const brokerHosts = opts.brokerHosts ?? BROKER_HOSTS;
+  const rows = brokerHosts.flatMap((id) => registry.filter((h) => h.id === id).slice(0, 1));
+  const addrOf = (h: HostRow): string => {
+    if (!h.tailnet) throw new Error(`host registry: ${h.id} has no tailnet address`);
+    return `${h.tailnet}:${port}`;
+  };
+  const me = rows.find((h) => h.id === self);
+  if (!me) throw new Error(`host registry: ${self} is not a broker host in the registry`);
+  return {
+    schema: 1,
+    self_machine: self,
+    self_ts_addr: addrOf(me),
+    peers: rows
+      .filter((h) => h.id !== self)
+      .map((h) => ({ machine: h.id, ts_addr: addrOf(h), ssh_alias: `${h.id}-broker-secret` })),
+  };
+}
+
+export function loadHostRegistry(path: string = process.env.HOST_REGISTRY ?? DEFAULT_REGISTRY): HostRow[] {
+  const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  if (!Array.isArray(parsed)) throw new Error(`host registry ${path}: not an array`);
+  return parsed as HostRow[];
 }
 
 export function loadBrokersConfig(path: string = BROKERS_JSON): BrokersConfig | null {

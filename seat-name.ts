@@ -56,3 +56,27 @@ export async function resolveSeatName(
     return { kind: "unknown" };
   }
 }
+
+// The roster's reader (sourced, never copied): `crewmate_is_id` and
+// `crewmate_home_server` answer which server a crewmate's home lives on (ADR-0064).
+const ROSTER_READER_SCRIPT =
+  process.env.CLAUDE_PEERS_ROSTER_READER ?? "/home/heesoo/sooth/shared/scripts/seat/crewmate-seat.sh";
+
+/**
+ * The server a roster crewmate's home lives on (`homeServer`, default oregon),
+ * or null for a name off the roster, an unreadable roster, or a broker without
+ * the script. A bare name whose home server is another broker is sent there as
+ * `<name>@<server>`, where that broker resolves the seat.
+ */
+export async function readHomeServer(name: string, opts?: { script?: string }): Promise<string | null> {
+  if (!isSeatNameShaped(name)) return null;
+  const script = opts?.script ?? ROSTER_READER_SCRIPT;
+  if (!(await Bun.file(script).exists())) return null;
+  const proc = Bun.spawn(
+    ["bash", "-c", 'source "$1" && crewmate_is_id "$2" && crewmate_home_server "$2"', "_", script, name],
+    { stdout: "pipe", stderr: "ignore", timeout: 5_000 },
+  );
+  const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+  const server = stdout.trim();
+  return code === 0 && server ? server : null;
+}

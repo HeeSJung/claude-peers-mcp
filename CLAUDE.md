@@ -145,3 +145,12 @@ bun --hot ./index.ts
 ```
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+
+## Agent skills
+
+Config the vendored engineering skills read in this repo:
+
+- **Issue tracker**: GitHub issues in `sooth-os/crew-peers` on board 3 (`sooth-os`), via `gh`. See `docs/agents/issue-tracker.md`.
+- **Triage labels**: the company-wide GTD mapping, read from the corpus; no local copy. See `~/sooth/shared/docs/agents/triage-labels.md`.
+- **Domain docs**: single-context, with the company glossary and ADR series in `~/sooth/shared` owning this repo's words and decisions. See `docs/agents/domain.md`.
+- **This home's map**: what lives here, which doc to read when, and where a new file goes. See `docs/agents/crew-peers-domain.md`.

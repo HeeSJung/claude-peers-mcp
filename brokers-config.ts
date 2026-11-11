@@ -95,9 +95,9 @@ export function buildBrokersConfig(
 }
 
 export function loadHostRegistry(path: string = process.env.HOST_REGISTRY ?? DEFAULT_REGISTRY): HostRow[] {
-  const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  const parsed = JSON.parse(readFileSync(path, "utf8")) as HostRow[];
   if (!Array.isArray(parsed)) throw new Error(`host registry ${path}: not an array`);
-  return parsed as HostRow[];
+  return parsed;
 }
 
 export function loadBrokersConfig(path: string = BROKERS_JSON): BrokersConfig | null {

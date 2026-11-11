@@ -48,7 +48,7 @@ import { createTargetFilter } from "./fanout-targets.ts";
 import { parseVscodeReplyAddress, deliverVscodeReply } from "./vscode-reply.ts";
 import { readHomeServer, resolveSeatName } from "./seat-name.ts";
 import { parseSessionAddress, deliverSessionMessage } from "./session-address.ts";
-import { parseSoliosAddress, deliverSoliosReply } from "./solios-reply.ts";
+import { parseSoliosAddress, deliverSoliosReply, SOLIOS_FORWARD_TIMEOUT_MS } from "./solios-reply.ts";
 import { normalizeAddress } from "./headless.ts";
 
 const PORT_LOCAL = parseInt(process.env.CLAUDE_PEERS_PORT ?? "7899", 10);
@@ -58,6 +58,11 @@ const HEALTH_INTERVAL_MS = 30_000;
 const STALE_AFTER_FAILS = 3; // mark stale after 3 consecutive /health failures
 const DOWN_AFTER_MS = 5 * 60 * 1000; // prune remote_peers after 5min stale
 const HEARTBEAT_FANOUT_MIN_INTERVAL_MS = 10_000; // throttle heartbeat fanout
+const PEER_TIMEOUT_MS = 5_000; // every call to a peer broker but a Solios-thread forward
+// A forward to anything but a Solios thread; `CLAUDE_PEERS_FORWARD_TIMEOUT_MS` overrides it (tests).
+const FORWARD_TIMEOUT_MS = Number(process.env.CLAUDE_PEERS_FORWARD_TIMEOUT_MS) > 0
+  ? Number(process.env.CLAUDE_PEERS_FORWARD_TIMEOUT_MS)
+  : PEER_TIMEOUT_MS;
 
 // --- Database setup ---
 
@@ -618,7 +623,9 @@ async function forwardToRemoteBroker(
   machine: string,
   body: ForwardRequest,
 ): Promise<ForwardResponse> {
-  const result = await peerPostJson<ForwardResponse>(machine, "POST", "/forward", body);
+  // A Solios-thread forward waits out the peer broker's own wait on its daemon.
+  const timeoutMs = parseSoliosAddress(body.to_id) ? SOLIOS_FORWARD_TIMEOUT_MS : FORWARD_TIMEOUT_MS;
+  const result = await peerPostJson<ForwardResponse>(machine, "POST", "/forward", body, timeoutMs);
   const label = `${body.from_id}→${body.to_id}`;
   if (result.ok && result.data?.ok) {
     void logCrossHost(`FORWARD-OUT ${machine} ${label} OK`);
@@ -645,6 +652,7 @@ async function peerPostJson<T>(
   method: "POST" | "GET",
   path: string,
   body: PeerBrokerRequest | null,
+  timeoutMs = PEER_TIMEOUT_MS,
 ): Promise<PostResult<T>> {
   const entry = peerEntries.get(machine);
   if (!entry) return { ok: false, error: `unknown-machine ${machine}` };
@@ -663,7 +671,7 @@ async function peerPostJson<T>(
       method,
       headers: { "Content-Type": "application/json", ...headers },
       body: method === "GET" ? undefined : bodyStr,
-      signal: AbortSignal.timeout(5_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) return { ok: false, status: res.status, error: `${res.status}` };
     const data = (await res.json()) as T;

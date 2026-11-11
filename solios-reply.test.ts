@@ -6,11 +6,12 @@ import { parseSoliosAddress, deliverSoliosReply } from "./solios-reply.ts";
 import { parseSessionAddress } from "./session-address.ts";
 import type { BrokerRequest } from "./shared/types.ts";
 
-/** A fake Solios daemon: records every reply and answers with `verdict`. */
+/** A fake Solios daemon: records every reply and answers with `verdict`, after `delayMs`. */
 function fakeDaemon() {
   const state = {
     hits: [] as { path: string; secret: string | null; body: unknown }[],
     verdict: (() => Response.json({ ok: true, ts: 1 })) as () => Response,
+    delayMs: 0,
     server: null as ReturnType<typeof Bun.serve> | null,
   };
   state.server = Bun.serve({
@@ -22,6 +23,7 @@ function fakeDaemon() {
         secret: req.headers.get("x-solios-secret"),
         body: await req.json(),
       });
+      if (state.delayMs) await Bun.sleep(state.delayMs);
       return state.verdict();
     },
   });
@@ -184,6 +186,7 @@ describe("broker /send-message: solios:<thread_id> on the daemon's server", () =
 describe("two brokers: an office seat on another server answers a Solios thread", () => {
   const ROOT = `/tmp/solios-reply-two-brokers-${process.pid}`;
   const THREAD = "2026-11-11-a1b2c3";
+  const FORWARD_MS = 500;
   const B = {
     oregon: { dir: join(ROOT, "oregon"), port: 36979, proc: null as Subprocess | null },
     helsinki: { dir: join(ROOT, "helsinki"), port: 36989, proc: null as Subprocess | null },
@@ -231,6 +234,11 @@ describe("two brokers: an office seat on another server answers a Solios thread"
           // Only Oregon runs the daemon; Helsinki's loopback has none.
           CLAUDE_PEERS_TICKET_INBOX_URL: self === "oregon" ? `http://127.0.0.1:${d.server!.port}` : "http://127.0.0.1:1",
           SOOTH_KEEP_MCP_SECRET: "daemon-secret",
+          // Scaled-down timeouts, nested as in production: a plain forward
+          // gives up first, the daemon call next, a Solios-thread forward last.
+          CLAUDE_PEERS_FORWARD_TIMEOUT_MS: String(FORWARD_MS),
+          CLAUDE_PEERS_SOLIOS_REPLY_TIMEOUT_MS: "3000",
+          CLAUDE_PEERS_SOLIOS_FORWARD_TIMEOUT_MS: "4000",
         },
         stdout: "ignore",
         stderr: "ignore",
@@ -262,6 +270,7 @@ describe("two brokers: an office seat on another server answers a Solios thread"
 
   beforeEach(() => {
     d.hits = [];
+    d.delayMs = 0;
     d.verdict = () => Response.json({ ok: true, ts: 1 });
   });
 
@@ -301,5 +310,18 @@ describe("two brokers: an office seat on another server answers a Solios thread"
     });
     expect(r.ok).toBe(false);
     expect(r.error).toContain("reply: content is required");
+  });
+
+  test("a reply slower than a plain forward's timeout lands once and is reported ok", async () => {
+    d.delayMs = FORWARD_MS * 2;
+    const r = await post(B.helsinki.port, "/send-message", {
+      from_id: seat,
+      to_id: `solios:${THREAD}@oregon`,
+      text: "늦은 답장",
+    });
+    expect(r).toEqual({ ok: true });
+    expect(d.hits).toEqual([
+      { path: "/api/v1/reply", secret: "daemon-secret", body: { thread_id: THREAD, content: "늦은 답장" } },
+    ]);
   });
 });

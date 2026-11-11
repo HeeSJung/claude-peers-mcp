@@ -18,15 +18,30 @@
  *   400/401/502 `{ok:false, error}` → failed send carrying the daemon's reason.
  */
 
-import { loadDaemonSecret } from "./session-address.ts";
+import { postToDaemon } from "./session-address.ts";
 
 export const SOLIOS_ADDRESS_PREFIX = "solios:";
 
-/** The daemon's loopback listener; `CLAUDE_PEERS_TICKET_INBOX_URL` overrides it, as for session addresses. */
-const DEFAULT_DAEMON_BASE_URL = "http://127.0.0.1:8770";
+function msFromEnv(name: string, fallback: number): number {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v > 0 ? v : fallback;
+}
 
-/** A gh: thread posts an issue comment through the daemon, so allow it the same budget as the reply script. */
-const REPLY_TIMEOUT_MS = 20_000;
+/**
+ * How long the broker waits on the daemon's reply endpoint. A gh: thread posts
+ * an issue comment through the daemon, so it gets the reply script's budget.
+ * `CLAUDE_PEERS_SOLIOS_REPLY_TIMEOUT_MS` overrides it (tests).
+ */
+export const SOLIOS_REPLY_TIMEOUT_MS = msFromEnv("CLAUDE_PEERS_SOLIOS_REPLY_TIMEOUT_MS", 20_000);
+
+/**
+ * How long a sending broker waits on a peer broker's `/forward` to a
+ * `solios:<thread_id>`: longer than that broker's wait on its daemon, so a
+ * slow reply that lands is never reported to the sender as failed (a retry
+ * would post it twice). `CLAUDE_PEERS_SOLIOS_FORWARD_TIMEOUT_MS` overrides it
+ * (tests).
+ */
+export const SOLIOS_FORWARD_TIMEOUT_MS = msFromEnv("CLAUDE_PEERS_SOLIOS_FORWARD_TIMEOUT_MS", 30_000);
 
 /**
  * The thread id when `toId` is `solios:` plus a non-empty key with no
@@ -43,31 +58,19 @@ export function parseSoliosAddress(toId: string): string | null {
 export async function deliverSoliosReply(
   threadId: string,
   text: string,
-  // `secret: undefined` given explicitly = send no header; omitted = look it up.
   opts?: { baseUrl?: string; secret?: string | undefined },
 ): Promise<{ ok: boolean; error?: string }> {
-  const baseUrl = opts?.baseUrl ?? process.env.CLAUDE_PEERS_TICKET_INBOX_URL ?? DEFAULT_DAEMON_BASE_URL;
-  const secret = opts && "secret" in opts ? opts.secret : await loadDaemonSecret();
-  const headers = new Headers({ "content-type": "application/json" });
-  if (secret) headers.set("x-solios-secret", secret);
-
-  let res: Response;
+  const r = await postToDaemon(
+    "/api/v1/reply",
+    { thread_id: threadId, content: text },
+    SOLIOS_REPLY_TIMEOUT_MS,
+    opts,
+  );
+  if (r.ok) return { ok: true };
+  if (r.unreachable) return { ok: false, error: `Solios daemon unreachable at ${r.baseUrl}: ${r.message}` };
+  let reason = r.body;
   try {
-    res = await fetch(`${baseUrl}/api/v1/reply`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ thread_id: threadId, content: text }),
-      signal: AbortSignal.timeout(REPLY_TIMEOUT_MS),
-    });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: `Solios daemon unreachable at ${baseUrl}: ${msg}` };
-  }
-  if (res.ok) return { ok: true };
-  const raw = (await res.text().catch(() => "")).trim();
-  let reason = raw;
-  try {
-    const parsed = JSON.parse(raw) as { error?: unknown };
+    const parsed = JSON.parse(r.body) as { error?: unknown };
     if (typeof parsed.error === "string") reason = parsed.error;
   } catch {
     // a plain-text refusal is its own reason
@@ -75,7 +78,7 @@ export async function deliverSoliosReply(
   return {
     ok: false,
     error: reason
-      ? `Solios daemon refused thread ${threadId} (${res.status}): ${reason}`
-      : `Solios daemon refused thread ${threadId} (${res.status})`,
+      ? `Solios daemon refused thread ${threadId} (${r.status}): ${reason}`
+      : `Solios daemon refused thread ${threadId} (${r.status})`,
   };
 }

@@ -358,9 +358,8 @@ describe("two brokers: a bare name crosses to the server its home lives on", () 
   test("the seat on helsinki receives it, from <sender>@oregon", async () => {
     const seat = await register(B.helsinki.port, mayHome);
     const sender = await register(B.oregon.port, join(ROOT, "elsewhere"));
-    expect(await post(B.oregon.port, "/send-message", { from_id: sender, to_id: "may", text: "hello may" })).toEqual({
-      ok: true,
-    });
+    const sent = await post<{ ok: boolean }>(B.oregon.port, "/send-message", { from_id: sender, to_id: "may", text: "hello may" });
+    expect(sent).toEqual({ ok: true });
     const inbox = await post<{ messages: { from_id: string; text: string }[] }>(B.helsinki.port, "/poll-messages", {
       id: seat,
     });
@@ -368,7 +367,8 @@ describe("two brokers: a bare name crosses to the server its home lives on", () 
   });
 
   test("no seat there: the sender gets the failure, not a silent drop", async () => {
-    await post(B.helsinki.port, "/unregister", { id: (await post<{ id: string }[]>(B.helsinki.port, "/list-peers", { scope: "machine", cwd: "", git_root: null }))[0]!.id });
+    const here = await post<{ id: string }[]>(B.helsinki.port, "/list-peers", { scope: "machine", cwd: "", git_root: null });
+    for (const p of here) await post(B.helsinki.port, "/unregister", { id: p.id });
     const sender = await register(B.oregon.port, join(ROOT, "elsewhere2"));
     const r = await post<{ ok: boolean }>(B.oregon.port, "/send-message", { from_id: sender, to_id: "may", text: "x" });
     expect(r.ok).toBe(false);

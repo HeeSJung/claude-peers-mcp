@@ -48,6 +48,7 @@ import { createTargetFilter } from "./fanout-targets.ts";
 import { parseVscodeReplyAddress, deliverVscodeReply } from "./vscode-reply.ts";
 import { readHomeServer, resolveSeatName } from "./seat-name.ts";
 import { parseSessionAddress, deliverSessionMessage } from "./session-address.ts";
+import { parseSoliosAddress, deliverSoliosReply } from "./solios-reply.ts";
 import { normalizeAddress } from "./headless.ts";
 
 const PORT_LOCAL = parseInt(process.env.CLAUDE_PEERS_PORT ?? "7899", 10);
@@ -488,6 +489,13 @@ async function handleSendMessage(
   const session = parseSessionAddress(body.to_id);
   if (session) return deliverSessionMessage(session, senderIdFor(body.from_id, "local"), body.text);
 
+  // `solios:<thread_id>` is a Solios panel thread on this server: the content
+  // lands there through the daemon's reply endpoint, whose refusal comes back
+  // as this failed send. `solios:<thread_id>@<machine>` takes the `@` branch
+  // below and lands the same way on that machine's broker (/forward).
+  const soliosThread = parseSoliosAddress(body.to_id);
+  if (soliosThread) return deliverSoliosReply(soliosThread, body.text);
+
   // Detect @machine suffix → forward.
   const at = body.to_id.lastIndexOf("@");
   if (at > 0) {
@@ -746,6 +754,14 @@ async function handlePeerRequest(req: Request): Promise<Response> {
         const fw = json as ForwardRequest;
         if (fw.from_machine !== machine) {
           return authFail({ error: "bad-sig" }, path, machine);
+        }
+        // A Solios thread on this server: the daemon's verdict is the body,
+        // sent as 200 so its reason reaches the sender's broker intact.
+        const soliosThread = parseSoliosAddress(fw.to_id);
+        if (soliosThread) {
+          const r = await deliverSoliosReply(soliosThread, fw.text);
+          void logCrossHost(`FORWARD-IN ${machine} ${fw.from_id}→${fw.to_id} ${r.ok ? "OK" : `ERR ${r.error}`}`);
+          return Response.json(r);
         }
         // An exact peer id first, else a bare seat name seated here. Never
         // forwarded on again: a name resolves on the server that received it.

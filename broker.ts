@@ -46,7 +46,7 @@ import { SshSecretFetcher } from "./secret-fetcher.ts";
 import { logCrossHost, checkRate } from "./cross-host-log.ts";
 import { createTargetFilter } from "./fanout-targets.ts";
 import { parseVscodeReplyAddress, deliverVscodeReply } from "./vscode-reply.ts";
-import { resolveSeatName } from "./seat-name.ts";
+import { readHomeServer, resolveSeatName } from "./seat-name.ts";
 import { parseSessionAddress, deliverSessionMessage } from "./session-address.ts";
 import { normalizeAddress } from "./headless.ts";
 
@@ -525,20 +525,40 @@ async function handleSendMessage(
     });
   }
 
-  // A bare seat name ("haru") is the session seated in that crewmate's home,
-  // looked up on every send so a restarted seat's new id is never stale.
-  const seat = await resolveSeatName(
-    body.to_id,
-    handleListPeers({ scope: "machine", cwd: "", git_root: null }),
-  );
-  if (seat.kind === "seat" && selectPeerById.get(seat.id)) {
+  // A bare name whose home lives on another server goes to `<name>@<server>`;
+  // that broker resolves the seat. Only a server this broker peers with counts,
+  // so a broker with no brokers.json keeps every name local.
+  const homeServer = await readHomeServer(body.to_id);
+  if (homeServer && homeServer !== SELF_MACHINE && peerEntries.has(homeServer)) {
+    return forwardToRemoteBroker(homeServer, {
+      from_id: senderIdFor(body.from_id, "cross-host"),
+      from_machine: SELF_MACHINE,
+      to_id: body.to_id,
+      text: body.text,
+      sent_at: new Date().toISOString(),
+    });
+  }
+
+  const seat = await resolveLocalSeat(body.to_id);
+  if ("id" in seat) {
     insertMessage.run(senderIdFor(body.from_id, "local"), seat.id, body.text, new Date().toISOString());
     return { ok: true };
   }
+  return { ok: false, error: seat.error };
+}
+
+/**
+ * A bare seat name ("haru") is the session seated in that crewmate's home on this
+ * box, looked up on every send so a restarted seat's new id is never stale. Both
+ * a local send and a forward from another server (`may@helsinki`) land here.
+ */
+async function resolveLocalSeat(name: string): Promise<{ id: string } | { error: string }> {
+  const seat = await resolveSeatName(name, handleListPeers({ scope: "machine", cwd: "", git_root: null }));
+  if (seat.kind === "seat" && selectPeerById.get(seat.id)) return { id: seat.id };
   if (seat.kind !== "unknown") {
-    return { ok: false, error: `Peer ${body.to_id} not found: no live session or stand-in at ${seat.home}` };
+    return { error: `Peer ${name} not found: no live session or stand-in at ${seat.home}` };
   }
-  return { ok: false, error: `Peer ${body.to_id} not found` };
+  return { error: `Peer ${name} not found` };
 }
 
 function handlePollMessages(body: PollMessagesRequest): PollMessagesResponse {
@@ -727,13 +747,16 @@ async function handlePeerRequest(req: Request): Promise<Response> {
         if (fw.from_machine !== machine) {
           return authFail({ error: "bad-sig" }, path, machine);
         }
+        // An exact peer id first, else a bare seat name seated here. Never
+        // forwarded on again: a name resolves on the server that received it.
         const target = selectPeerById.get(fw.to_id) as Peer | undefined;
-        if (!target) {
+        const seat = target ? { id: target.id } : await resolveLocalSeat(fw.to_id);
+        if (!("id" in seat)) {
           void logCrossHost(`FORWARD-IN ${machine} ${fw.from_id}→${fw.to_id} ERR peer-not-found`);
           return Response.json({ ok: false, error: "peer-not-found" }, { status: 404 });
         }
         const mangledFrom = `${fw.from_id}@${fw.from_machine}`;
-        insertMessage.run(mangledFrom, fw.to_id, fw.text, fw.sent_at);
+        insertMessage.run(mangledFrom, seat.id, fw.text, fw.sent_at);
         void logCrossHost(`FORWARD-IN ${machine} ${fw.from_id}→${fw.to_id} OK`);
         return Response.json({ ok: true });
       }

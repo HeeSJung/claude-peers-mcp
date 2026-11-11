@@ -158,19 +158,25 @@ binds to the Tailscale IP only — never to `0.0.0.0` or any public NIC.
        IdentitiesOnly yes
    ```
 
-4. **Edit `~/.crew-peers/brokers.json`:**
+4. **Build `~/.crew-peers/brokers.json` from the host registry** (shared
+   `data/hosts.json`), naming this machine by its place:
+
+   ```bash
+   bun cli.ts brokers-config "$(~/sooth/shared/scripts/hosts/host-registry.sh here)" > ~/.crew-peers/brokers.json
+   ```
+
+   Every other broker host (oregon, helsinki, mac; `BROKER_HOSTS` in
+   `brokers-config.ts`) becomes a peer at its tailnet address, its secret fetched
+   through the `<host>-broker-secret` ssh alias from step 3. The result has this shape:
 
    ```json
    {
      "schema": 1,
-     "self_machine": "silas-vps",
+     "self_machine": "oregon",
      "self_ts_addr": "100.64.0.5:7900",
      "peers": [
-       {
-         "machine":   "milo-mac",
-         "ts_addr":   "100.64.0.7:7900",
-         "ssh_alias": "milo-broker-secret"
-       }
+       { "machine": "helsinki", "ts_addr": "100.64.0.6:7900", "ssh_alias": "helsinki-broker-secret" },
+       { "machine": "mac",      "ts_addr": "100.64.0.7:7900", "ssh_alias": "mac-broker-secret" }
      ]
    }
    ```
@@ -180,7 +186,7 @@ binds to the Tailscale IP only — never to `0.0.0.0` or any public NIC.
    ```
    [claude-peers broker] local listener: 127.0.0.1:7899
    [claude-peers broker] peer listener:  100.64.0.5:7900
-   [claude-peers broker] peers: milo-mac
+   [claude-peers broker] peers: helsinki, mac
    ```
 
 ### Use it from Claude
@@ -189,7 +195,7 @@ binds to the Tailscale IP only — never to `0.0.0.0` or any public NIC.
 list_peers with scope "machine+remote"
    → returns local + remote peers; remote IDs end in @<machine>
 
-send_message to_id "<id>@milo-mac" message "..."
+send_message to_id "<id>@mac" message "..."
    → forwarded over Tailscale; recipient sees same channel push as local
 ```
 
@@ -199,7 +205,9 @@ send_message to_id "<id>@milo-mac" message "..."
 (`~/sooth/haru`, or the roster's `home`), falling back to its listener stand-in.
 The broker resolves the name on every send through
 `~/sooth/shared/scripts/crew-peers/crew-send-peers.sh --resolve`, so a seat restart never
-breaks a sender. Exact peer ids always win over a name. After deploying a broker
+breaks a sender. Exact peer ids always win over a name. When the roster names another server as
+the crewmate's home (`homeServer`), the send goes to `<name>@<that server>` and the
+broker there resolves the name, so a sender never needs to know where a crewmate lives. After deploying a broker
 change, restart the user unit: `systemctl --user restart crew-peers-broker`.
 
 If `brokers.json` is absent, the broker runs in single-broker mode (v1

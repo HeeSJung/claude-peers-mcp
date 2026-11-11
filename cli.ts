@@ -9,8 +9,12 @@
  *   bun cli.ts peers           — List all peers
  *   bun cli.ts send <id> <msg> — Send a message to a peer
  *   bun cli.ts kill-broker     — Stop the broker daemon
+ *   bun cli.ts brokers-config <self-host>
+ *                              — Print brokers.json for the broker on <self-host>, built
+ *                                from the host registry (HOST_REGISTRY overrides its path)
  */
 
+import { buildBrokersConfig, loadHostRegistry } from "./brokers-config.ts";
 import type { BrokerRequest } from "./shared/types.ts";
 
 const BROKER_PORT = parseInt(process.env.CLAUDE_PEERS_PORT ?? "7899", 10);
@@ -152,6 +156,17 @@ switch (cmd) {
     break;
   }
 
+  case "brokers-config": {
+    const self = process.argv[3] ?? process.env.SOOTH_SERVER;
+    if (!self) {
+      console.error("Usage: bun cli.ts brokers-config <self-host>");
+      process.exit(2);
+    }
+    const port = parseInt(process.env.CLAUDE_PEERS_PEER_PORT ?? "7900", 10);
+    console.log(JSON.stringify(buildBrokersConfig(loadHostRegistry(), self, { port }), null, 2));
+    break;
+  }
+
   default:
     console.log(`claude-peers CLI
 
@@ -159,5 +174,7 @@ Usage:
   bun cli.ts status          Show broker status and all peers
   bun cli.ts peers           List all peers
   bun cli.ts send <id> <msg> Send a message to a peer
-  bun cli.ts kill-broker     Stop the broker daemon`);
+  bun cli.ts kill-broker     Stop the broker daemon
+  bun cli.ts brokers-config <self-host>
+                             Print brokers.json for <self-host> from the host registry`);
 }
